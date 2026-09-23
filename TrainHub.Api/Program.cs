@@ -1,20 +1,21 @@
-using Microsoft.EntityFrameworkCore;
-using TrainHub.Infrastructure.Data; // تأكد من مطابقة مسار الـ DbContext في مشروعك
+using TrainHub.Application;
+using TrainHub.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Add DbContext with Connection String from appsettings.json
-builder.Services.AddDbContext<TrainHubDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+// ── Service Registration (Clean Architecture layers) ────────────
+builder.Services
+    .AddApplication()
+    .AddInfrastructure(builder.Configuration);
 
-// 2. Add Controllers & OpenAPI/Swagger
+// ── API Services ────────────────────────────────────────────────
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// 3. Configure the HTTP request pipeline
+// ── HTTP Pipeline ───────────────────────────────────────────────
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -24,7 +25,6 @@ app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
-// 4. Map Controller routes
 app.MapControllers();
 
 app.Run();
