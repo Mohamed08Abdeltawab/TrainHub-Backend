@@ -38,7 +38,7 @@ public static class DependencyInjection
             options.Lockout.AllowedForNewUsers = true;
 
             // User settings
-            options.User.RequireUniqueEmail = true;
+            options.User.RequireUniqueEmail = false;
         })
         .AddRoles<IdentityRole<Guid>>()
         .AddEntityFrameworkStores<TrainHubDbContext>();
