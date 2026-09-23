@@ -1,11 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using TrainHub.Domain.Models;
 
 namespace TrainHub.Infrastructure.Data;
 
-public partial class TrainHubDbContext : DbContext
+public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
 {
     public TrainHubDbContext()
     {
@@ -36,8 +38,12 @@ public partial class TrainHubDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
+
+        // Map ApplicationUser to the existing table name instead of Identity's default "AspNetUsers"
         modelBuilder.Entity<ApplicationUser>(entity =>
         {
+            entity.ToTable("ApplicationUsers");
             entity.HasIndex(e => new { e.OrganizationId, e.LastName, e.FirstName }, "IX_ApplicationUsers_Org_LastName_FirstName");
 
             entity.HasIndex(e => new { e.OrganizationId, e.NormalizedEmail }, "IX_ApplicationUsers_Org_NormalizedEmail").IsUnique();

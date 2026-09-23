@@ -7,7 +7,7 @@ namespace TrainHub.Application.Interfaces;
 /// </summary>
 public interface IGenericRepository<T> where T : class
 {
-    Task<T?> GetByIdAsync(Guid id, ايه فايدة الفولدر دا [IUnitOfWork.cs](TrainHub.Application/Interfaces/IUnitOfWork.cs));
+    Task<T?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<T>> GetAllAsync(CancellationToken cancellationToken = default);
 
