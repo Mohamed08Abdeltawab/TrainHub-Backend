@@ -1,0 +1,155 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Query;
+using Microsoft.Extensions.Logging;
+using TrainHub.Application.Common.Exceptions;
+using TrainHub.Application.Features.Roles.DTOs;
+using TrainHub.Application.Interfaces;
+using TrainHub.Domain.Models;
+
+namespace TrainHub.Infrastructure.Services;
+
+/// <summary>
+/// Infrastructure implementation of IRoleService using ASP.NET Core Identity.
+/// </summary>
+public class RoleService : IRoleService
+{
+    private readonly RoleManager<IdentityRole<Guid>> _roleManager;
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly ILogger<RoleService> _logger;
+
+    public RoleService(
+        RoleManager<IdentityRole<Guid>> roleManager,
+        UserManager<ApplicationUser> userManager,
+        ILogger<RoleService> logger)
+    {
+        _roleManager = roleManager;
+        _userManager = userManager;
+        _logger = logger;
+    }
+
+    public async Task<IReadOnlyList<RoleDto>> GetAllRolesAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving all roles from database.");
+
+        var roles = await _roleManager.Roles
+            .AsNoTracking()
+            .Select(r => new RoleDto(r.Id, r.Name ?? string.Empty))
+            .ToListAsync(cancellationToken);
+
+        _logger.LogInformation("Retrieved {Count} roles.", roles.Count);
+        return roles;
+    }
+
+    
+
+    public async Task<UserRolesDto> GetUserRolesAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving roles for user '{UserId}'.", userId);
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            _logger.LogWarning("User '{UserId}' was not found.", userId);
+            throw new NotFoundException(nameof(ApplicationUser), userId);
+        }
+
+        var roles = await _userManager.GetRolesAsync(user);
+
+        return new UserRolesDto
+        {
+            UserId = user.Id,
+            Email = user.Email,
+            UserName = user.UserName,
+            Roles = roles.ToList()
+        };
+    }
+
+    public async Task AssignRoleAsync(Guid userId, string roleName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(roleName))
+        {
+            throw new BadRequestException("Role name cannot be empty.");
+        }
+
+        var normalizedRole = roleName.Trim();
+        _logger.LogInformation("Attempting to assign role '{RoleName}' to user '{UserId}'.", normalizedRole, userId);
+
+        var roleExists = await _roleManager.RoleExistsAsync(normalizedRole);
+        if (!roleExists)
+        {
+            _logger.LogWarning("Role '{RoleName}' does not exist.", normalizedRole);
+            throw new NotFoundException("Role", normalizedRole);
+        }
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            _logger.LogWarning("User '{UserId}' was not found during role assignment.", userId);
+            throw new NotFoundException(nameof(ApplicationUser), userId);
+        }
+
+        var isAlreadyInRole = await _userManager.IsInRoleAsync(user, normalizedRole);
+        if (isAlreadyInRole)
+        {
+            _logger.LogWarning("User '{UserId}' is already assigned to role '{RoleName}'.", userId, normalizedRole);
+            throw new ConflictException($"User '{user.UserName ?? userId.ToString()}' is already in role '{normalizedRole}'.");
+        }
+
+        var result = await _userManager.AddToRoleAsync(user, normalizedRole);
+        if (!result.Succeeded)
+        {
+            var errors = string.Join("; ", result.Errors.Select(e => e.Description));
+            _logger.LogError("Failed to assign role '{RoleName}' to user '{UserId}'. Errors: {Errors}", normalizedRole, userId, errors);
+            throw new BadRequestException($"Failed to assign role: {errors}");
+        }
+
+        _logger.LogInformation("Role '{RoleName}' successfully assigned to user '{UserId}'.", normalizedRole, userId);
+    }
+
+
+    public async Task RemoveRoleAsync(Guid userId, string roleName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(roleName))
+        {
+            throw new BadRequestException("Role name cannot be empty.");
+        }
+
+        var normalizedRole = roleName.Trim();
+        _logger.LogInformation("Attempting to remove role '{RoleName}' from user '{UserId}'.", normalizedRole, userId);
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            _logger.LogWarning("User '{UserId}' was not found during role removal.", userId);
+            throw new NotFoundException(nameof(ApplicationUser), userId);
+        }
+
+        var isInRole = await _userManager.IsInRoleAsync(user, normalizedRole);
+        if (!isInRole)
+        {
+            _logger.LogWarning("User '{UserId}' does not have role '{RoleName}'.", userId, normalizedRole);
+            throw new BadRequestException($"User '{user.UserName ?? userId.ToString()}' does not have role '{normalizedRole}'.");
+        }
+
+        var result = await _userManager.RemoveFromRoleAsync(user, normalizedRole);
+        if (!result.Succeeded)
+        {
+            var errors = string.Join("; ", result.Errors.Select(e => e.Description));
+            _logger.LogError("Failed to remove role '{RoleName}' from user '{UserId}'. Errors: {Errors}", normalizedRole, userId, errors);
+            throw new BadRequestException($"Failed to remove role: {errors}");
+        }
+
+        _logger.LogInformation("Role '{RoleName}' successfully removed from user '{UserId}'.", normalizedRole, userId);
+    }
+
+    public async Task<bool> RoleExistsAsync(string roleName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(roleName))
+        {
+            return false;
+        }
+
+        return await _roleManager.RoleExistsAsync(roleName.Trim());
+    }
+}

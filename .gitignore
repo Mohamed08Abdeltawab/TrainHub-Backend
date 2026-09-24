@@ -1,0 +1,67 @@
+## .NET build and output directories
+**/[Bb]in/
+**/[Oo]bj/
+**/[Ll]og/
+**/[Ll]ogs/
+**/build/
+**/publish/
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+## Visual Studio & VS Code files
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## Local agent and tool state
+.kilo/
+.postman/
+
+## User-specific / Local settings
+appsettings.Local.json
+*.local.json
+*.local.*
+.env
+.env.*
+!.env.example
+
+## Rider & JetBrains
+.idea/
+*.sln.iml
+
+## Dotnet EF migrations & tooling artifacts
+*.userprefs
+*.dbmdl
+*.csproj.user
+*.nupkg
+*.snupkg
+
+## Local databases and generated data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.bak
+
+## OS-generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*.orig
+*~
