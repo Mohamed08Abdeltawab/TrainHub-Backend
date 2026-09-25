@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Models;
+using TrainHub.Infrastructure.Authentication;
 using TrainHub.Infrastructure.Data;
 
 namespace TrainHub.Infrastructure;
@@ -50,6 +51,9 @@ public static class DependencyInjection
         // ── Roles & Identity Services ────────────────────────────────
         services.AddScoped<IRoleService, Services.RoleService>();
         services.AddScoped<IRoleSeeder, RoleSeeder>();
+
+        // ── JWT Authentication ──────────────────────────────────────
+        services.AddJwtAuthentication(configuration);
 
         return services;
     }
