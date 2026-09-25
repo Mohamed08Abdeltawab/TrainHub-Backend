@@ -49,6 +49,16 @@ builder.Services.AddOpenApi(options =>
             BearerFormat = "JWT",
             Description = "Enter your JWT Bearer token in the format: {token}"
         };
+
+        document.Security ??= new List<Microsoft.OpenApi.OpenApiSecurityRequirement>();
+        document.Security.Add(new Microsoft.OpenApi.OpenApiSecurityRequirement
+        {
+            {
+                new Microsoft.OpenApi.OpenApiSecuritySchemeReference("Bearer", document, null),
+                new List<string>()
+            }
+        });
+
         return Task.CompletedTask;
     });
 });

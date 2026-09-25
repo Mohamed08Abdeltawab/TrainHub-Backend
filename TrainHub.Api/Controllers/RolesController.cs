@@ -1,11 +1,14 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TrainHub.Application.Features.Roles.DTOs;
 using TrainHub.Application.Interfaces;
+using TrainHub.Domain.Constants;
 
 namespace TrainHub.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Policy = AppPolicies.RequireSuperAdmin)]
 public class RolesController : ControllerBase
 {
     private readonly IRoleService _roleService;
