@@ -23,4 +23,8 @@ public partial class ApplicationUser : IdentityUser<Guid>
     public virtual Organization Organization { get; set; } = null!;
 
     public virtual Student? Student { get; set; }
+
+    public string? RefreshToken { get; set; }
+
+    public DateTime RefreshTokenExpiryTime { get; set; }
 }
