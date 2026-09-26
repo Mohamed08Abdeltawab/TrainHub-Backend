@@ -45,4 +45,18 @@ public class AuthController : ControllerBase
         var response = await _authService.LoginAsync(request, cancellationToken);
         return Ok(response);
     }
+
+    /// <summary>
+    /// Refreshes the JWT access token using a valid refresh token.
+    /// </summary>
+    [HttpPost("refresh-token")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<AuthResponse>> RefreshToken([FromBody] RefreshTokenRequest request, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP POST api/auth/refresh-token received for user '{UserId}'.", request.UserId);
+        var response = await _authService.RefreshTokenAsync(request, cancellationToken);
+        return Ok(response);
+    }
 }

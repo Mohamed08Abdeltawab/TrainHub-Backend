@@ -22,4 +22,12 @@ public interface IAuthService
     /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
     /// <returns>An <see cref="AuthResponse"/> containing user info and tokens.</returns>
     Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Refreshes an expired access token using a valid refresh token.
+    /// </summary>
+    /// <param name="request">The refresh token request data.</param>
+    /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
+    /// <returns>An <see cref="AuthResponse"/> containing new tokens.</returns>
+    Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default);
 }

@@ -177,4 +177,55 @@ public class AuthService : IAuthService
             Roles = roles.ToList()
         };
     }
+
+    public async Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Refresh token attempt for user '{UserId}'.", request.UserId);
+
+        var user = await _userManager.FindByIdAsync(request.UserId.ToString());
+
+        if (user == null || user.RefreshToken != request.RefreshToken)
+        {
+            _logger.LogWarning("Refresh token failed for user '{UserId}': Invalid token.", request.UserId);
+            throw new UnauthorizedAccessException("Invalid refresh token.");
+        }
+
+        if (user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+        {
+            _logger.LogWarning("Refresh token failed for user '{UserId}': Token expired.", request.UserId);
+            throw new UnauthorizedAccessException("Refresh token has expired. Please log in again.");
+        }
+
+        if (!user.IsActive)
+        {
+            _logger.LogWarning("Refresh token failed: User '{UserId}' is inactive.", user.Id);
+            throw new UnauthorizedAccessException("Your account is currently inactive.");
+        }
+
+        var roles = await _userManager.GetRolesAsync(user);
+
+        var accessToken = _jwtTokenGenerator.GenerateToken(user, roles);
+        var newRefreshToken = _jwtTokenGenerator.GenerateRefreshToken();
+
+        user.RefreshToken = newRefreshToken;
+        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpiryDays);
+
+        await _userManager.UpdateAsync(user);
+
+        _logger.LogInformation("Refresh token successful for user '{UserId}'.", user.Id);
+
+        return new AuthResponse
+        {
+            UserId = user.Id,
+            Email = user.Email!,
+            UserName = user.UserName!,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            AccessToken = accessToken,
+            RefreshToken = newRefreshToken,
+            AccessTokenExpiry = DateTime.UtcNow.AddMinutes(
+                _jwtSettings.ExpiryMinutes > 0 ? _jwtSettings.ExpiryMinutes : 60),
+            Roles = roles.ToList()
+        };
+    }
 }
