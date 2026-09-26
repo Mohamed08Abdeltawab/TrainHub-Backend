@@ -121,4 +121,60 @@ public class AuthService : IAuthService
             Roles = roles
         };
     }
+
+    public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Login attempt for email '{Email}' in organization '{OrganizationId}'.",
+            request.Email, request.OrganizationId);
+
+        var normalizedEmail = _userManager.NormalizeEmail(request.Email);
+
+        var user = await _dbContext.ApplicationUsers
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail && u.OrganizationId == request.OrganizationId, cancellationToken);
+
+        if (user == null)
+        {
+            _logger.LogWarning("Login failed: User '{Email}' not found in organization '{OrganizationId}'.", request.Email, request.OrganizationId);
+            throw new UnauthorizedAccessException("Invalid email or password.");
+        }
+
+        if (!user.IsActive)
+        {
+            _logger.LogWarning("Login failed: User '{UserId}' is inactive.", user.Id);
+            throw new UnauthorizedAccessException("Your account is currently inactive.");
+        }
+
+        var isPasswordValid = await _userManager.CheckPasswordAsync(user, request.Password);
+        if (!isPasswordValid)
+        {
+            _logger.LogWarning("Login failed: Invalid password for user '{UserId}'.", user.Id);
+            throw new UnauthorizedAccessException("Invalid email or password.");
+        }
+
+        var roles = await _userManager.GetRolesAsync(user);
+
+        var accessToken = _jwtTokenGenerator.GenerateToken(user, roles);
+        var refreshToken = _jwtTokenGenerator.GenerateRefreshToken();
+
+        user.RefreshToken = refreshToken;
+        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpiryDays);
+
+        await _userManager.UpdateAsync(user);
+
+        _logger.LogInformation("Login successful for user '{UserId}'.", user.Id);
+
+        return new AuthResponse
+        {
+            UserId = user.Id,
+            Email = user.Email!,
+            UserName = user.UserName!,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            AccessToken = accessToken,
+            RefreshToken = refreshToken,
+            AccessTokenExpiry = DateTime.UtcNow.AddMinutes(
+                _jwtSettings.ExpiryMinutes > 0 ? _jwtSettings.ExpiryMinutes : 60),
+            Roles = roles.ToList()
+        };
+    }
 }

@@ -31,4 +31,18 @@ public class AuthController : ControllerBase
         var response = await _authService.RegisterAsync(request, cancellationToken);
         return CreatedAtAction(nameof(Register), new { userId = response.UserId }, response);
     }
+
+    /// <summary>
+    /// Authenticates a user and returns tokens.
+    /// </summary>
+    [HttpPost("login")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP POST api/auth/login received for email '{Email}'.", request.Email);
+        var response = await _authService.LoginAsync(request, cancellationToken);
+        return Ok(response);
+    }
 }

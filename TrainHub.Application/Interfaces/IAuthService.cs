@@ -14,4 +14,12 @@ public interface IAuthService
     /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
     /// <returns>An <see cref="AuthResponse"/> containing user info and tokens.</returns>
     Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Authenticates a user and returns an authentication response with tokens.
+    /// </summary>
+    /// <param name="request">The login request data.</param>
+    /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
+    /// <returns>An <see cref="AuthResponse"/> containing user info and tokens.</returns>
+    Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default);
 }
