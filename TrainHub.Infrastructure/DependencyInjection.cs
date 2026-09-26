@@ -52,6 +52,9 @@ public static class DependencyInjection
         services.AddScoped<IRoleService, Services.RoleService>();
         services.AddScoped<IRoleSeeder, RoleSeeder>();
 
+        // ── Auth Services ────────────────────────────────────────────
+        services.AddScoped<IAuthService, Services.AuthService>();
+
         // ── JWT Authentication ──────────────────────────────────────
         services.AddJwtAuthentication(configuration);
 

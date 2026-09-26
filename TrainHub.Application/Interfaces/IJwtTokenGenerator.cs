@@ -24,4 +24,10 @@ public interface IJwtTokenGenerator
     /// <param name="additionalClaims">Optional additional claims to include in the token payload.</param>
     /// <returns>A signed JWT token string.</returns>
     string GenerateToken(ApplicationUser user, IEnumerable<string> roles, IEnumerable<Claim>? additionalClaims = null);
+
+    /// <summary>
+    /// Generates a cryptographically secure random refresh token.
+    /// </summary>
+    /// <returns>A base64 encoded random string.</returns>
+    string GenerateRefreshToken();
 }
