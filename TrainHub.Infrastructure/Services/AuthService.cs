@@ -228,4 +228,32 @@ public class AuthService : IAuthService
             Roles = roles.ToList()
         };
     }
+
+    public async Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Logout attempt for user '{UserId}'.", request.UserId);
+
+        var user = await _userManager.FindByIdAsync(request.UserId.ToString());
+
+        if (user == null)
+        {
+            _logger.LogWarning("Logout failed: User '{UserId}' not found.", request.UserId);
+            return; // Idempotent: User already doesn't exist, treat as logged out.
+        }
+
+        // Only revoke if the provided refresh token matches the current one in the database
+        if (user.RefreshToken == request.RefreshToken)
+        {
+            user.RefreshToken = null;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow;
+
+            await _userManager.UpdateAsync(user);
+            _logger.LogInformation("Logout successful for user '{UserId}'. Refresh token revoked.", request.UserId);
+        }
+        else
+        {
+            _logger.LogWarning("Logout failed for user '{UserId}': Mismatched refresh token.", request.UserId);
+            throw new UnauthorizedAccessException("Invalid refresh token.");
+        }
+    }
 }

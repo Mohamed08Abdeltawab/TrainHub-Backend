@@ -30,4 +30,11 @@ public interface IAuthService
     /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
     /// <returns>An <see cref="AuthResponse"/> containing new tokens.</returns>
     Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Logs out a user by revoking their refresh token.
+    /// </summary>
+    /// <param name="request">The logout request data containing the refresh token.</param>
+    /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
+    Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken = default);
 }

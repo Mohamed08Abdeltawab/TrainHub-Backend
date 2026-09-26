@@ -59,4 +59,18 @@ public class AuthController : ControllerBase
         var response = await _authService.RefreshTokenAsync(request, cancellationToken);
         return Ok(response);
     }
+
+    /// <summary>
+    /// Logs out a user by revoking their refresh token.
+    /// </summary>
+    [HttpPost("logout")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Logout([FromBody] LogoutRequest request, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP POST api/auth/logout received for user '{UserId}'.", request.UserId);
+        await _authService.LogoutAsync(request, cancellationToken);
+        return Ok(new { message = "Logged out successfully." });
+    }
 }
