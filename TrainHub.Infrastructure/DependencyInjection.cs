@@ -58,6 +58,9 @@ public static class DependencyInjection
         // ── User Services ───────────────────────────────────────────
         services.AddScoped<ICurrentUserService, Services.CurrentUserService>();
 
+        // ── Organization Services ───────────────────────────────────
+        services.AddScoped<IOrganizationService, Services.OrganizationService>();
+
         // ── JWT Authentication ──────────────────────────────────────
         services.AddJwtAuthentication(configuration);
 
