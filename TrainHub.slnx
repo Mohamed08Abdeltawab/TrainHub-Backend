@@ -3,4 +3,5 @@
   <Project Path="TrainHub.Application/TrainHub.Application.csproj" />
   <Project Path="TrainHub.Domain/TrainHub.Domain.csproj" />
   <Project Path="TrainHub.Infrastructure/TrainHub.Infrastructure.csproj" />
+  <Project Path="TrainHub.UnitTests/TrainHub.UnitTests.csproj" />
 </Solution>

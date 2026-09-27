@@ -126,6 +126,7 @@ public class AuthService : IAuthService
         var normalizedEmail = _userManager.NormalizeEmail(request.Email);
 
         var user = await _dbContext.ApplicationUsers
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail && u.OrganizationId == request.OrganizationId, cancellationToken);
 
         if (user == null)

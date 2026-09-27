@@ -8,15 +8,15 @@ public partial class TrainHubDbContext
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
         // Apply Global Query Filters for Tenant Isolation
-        modelBuilder.Entity<ApplicationUser>().HasQueryFilter(e => !CurrentOrganizationId.HasValue || e.OrganizationId == CurrentOrganizationId.Value);
-        modelBuilder.Entity<AttendanceRecord>().HasQueryFilter(e => !CurrentOrganizationId.HasValue || e.OrganizationId == CurrentOrganizationId.Value);
-        modelBuilder.Entity<Course>().HasQueryFilter(e => !CurrentOrganizationId.HasValue || e.OrganizationId == CurrentOrganizationId.Value);
-        modelBuilder.Entity<CourseGroup>().HasQueryFilter(e => !CurrentOrganizationId.HasValue || e.OrganizationId == CurrentOrganizationId.Value);
-        modelBuilder.Entity<Enrollment>().HasQueryFilter(e => !CurrentOrganizationId.HasValue || e.OrganizationId == CurrentOrganizationId.Value);
-        modelBuilder.Entity<Instructor>().HasQueryFilter(e => !CurrentOrganizationId.HasValue || e.OrganizationId == CurrentOrganizationId.Value);
-        modelBuilder.Entity<Session>().HasQueryFilter(e => !CurrentOrganizationId.HasValue || e.OrganizationId == CurrentOrganizationId.Value);
-        modelBuilder.Entity<Student>().HasQueryFilter(e => !CurrentOrganizationId.HasValue || e.OrganizationId == CurrentOrganizationId.Value);
-        modelBuilder.Entity<Organization>().HasQueryFilter(e => !CurrentOrganizationId.HasValue || e.Id == CurrentOrganizationId.Value);
+        modelBuilder.Entity<ApplicationUser>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
+        modelBuilder.Entity<AttendanceRecord>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
+        modelBuilder.Entity<Course>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
+        modelBuilder.Entity<CourseGroup>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
+        modelBuilder.Entity<Enrollment>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
+        modelBuilder.Entity<Instructor>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
+        modelBuilder.Entity<Session>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
+        modelBuilder.Entity<Student>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
+        modelBuilder.Entity<Organization>().HasQueryFilter(e => CurrentOrganizationId == null || e.Id == CurrentOrganizationId);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
