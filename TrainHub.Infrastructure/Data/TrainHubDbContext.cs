@@ -9,14 +9,19 @@ namespace TrainHub.Infrastructure.Data;
 
 public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
 {
+    private readonly TrainHub.Application.Interfaces.ICurrentOrganizationService? _currentOrganizationService;
+
     public TrainHubDbContext()
     {
     }
 
-    public TrainHubDbContext(DbContextOptions<TrainHubDbContext> options)
+    public TrainHubDbContext(DbContextOptions<TrainHubDbContext> options, TrainHub.Application.Interfaces.ICurrentOrganizationService? currentOrganizationService = null)
         : base(options)
     {
+        _currentOrganizationService = currentOrganizationService;
     }
+
+    public Guid? CurrentOrganizationId => _currentOrganizationService?.OrganizationId;
 
     public virtual DbSet<ApplicationUser> ApplicationUsers { get; set; }
 
