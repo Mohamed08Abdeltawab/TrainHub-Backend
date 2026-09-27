@@ -21,6 +21,7 @@ public class AuthService : IAuthService
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly TrainHubDbContext _dbContext;
     private readonly JwtSettings _jwtSettings;
+    private readonly IOrganizationValidator _organizationValidator;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
@@ -28,12 +29,14 @@ public class AuthService : IAuthService
         IJwtTokenGenerator jwtTokenGenerator,
         TrainHubDbContext dbContext,
         IOptions<JwtSettings> jwtOptions,
+        IOrganizationValidator organizationValidator,
         ILogger<AuthService> logger)
     {
         _userManager = userManager;
         _jwtTokenGenerator = jwtTokenGenerator;
         _dbContext = dbContext;
         _jwtSettings = jwtOptions.Value;
+        _organizationValidator = organizationValidator;
         _logger = logger;
     }
 
@@ -42,15 +45,8 @@ public class AuthService : IAuthService
         _logger.LogInformation("Registration attempt for email '{Email}' in organization '{OrganizationId}'.",
             request.Email, request.OrganizationId);
 
-        // ── Validate Organization exists ────────────────────────────
-        var organizationExists = await _dbContext.Organizations
-            .AnyAsync(o => o.Id == request.OrganizationId, cancellationToken);
-
-        if (!organizationExists)
-        {
-            _logger.LogWarning("Organization '{OrganizationId}' was not found during registration.", request.OrganizationId);
-            throw new NotFoundException("Organization", request.OrganizationId);
-        }
+        // ── Validate Organization exists and is active ──────────────
+        await _organizationValidator.ValidateOrganizationActiveAsync(request.OrganizationId, cancellationToken);
 
         // ── Check for duplicate email within the organization ───────
         var existingUser = await _userManager.FindByEmailAsync(request.Email);
@@ -144,6 +140,9 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Your account is currently inactive.");
         }
 
+        // ── Validate Organization is active and subscription healthy ─
+        await _organizationValidator.ValidateOrganizationActiveAsync(user.OrganizationId, cancellationToken);
+
         var isPasswordValid = await _userManager.CheckPasswordAsync(user, request.Password);
         if (!isPasswordValid)
         {
@@ -201,6 +200,9 @@ public class AuthService : IAuthService
             _logger.LogWarning("Refresh token failed: User '{UserId}' is inactive.", user.Id);
             throw new UnauthorizedAccessException("Your account is currently inactive.");
         }
+
+        // ── Validate Organization is active and subscription healthy ─
+        await _organizationValidator.ValidateOrganizationActiveAsync(user.OrganizationId, cancellationToken);
 
         var roles = await _userManager.GetRolesAsync(user);
 

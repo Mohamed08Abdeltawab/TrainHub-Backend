@@ -59,6 +59,7 @@ public static class DependencyInjection
         services.AddScoped<ICurrentUserService, Services.CurrentUserService>();
 
         // ── Organization Services ───────────────────────────────────
+        services.AddScoped<IOrganizationValidator, Services.OrganizationValidator>();
         services.AddScoped<IOrganizationService, Services.OrganizationService>();
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentOrganizationService, Services.CurrentOrganizationService>();
