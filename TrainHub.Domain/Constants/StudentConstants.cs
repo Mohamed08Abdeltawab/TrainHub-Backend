@@ -68,6 +68,18 @@ public static partial class StudentConstants
     }
 
     /// <summary>
+    /// Calculates the age in years from a date of birth.
+    /// </summary>
+    public static int CalculateAge(DateOnly dateOfBirth, DateOnly? referenceDate = null)
+    {
+        var today = referenceDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var age = today.Year - dateOfBirth.Year;
+        if (dateOfBirth > today.AddYears(-age))
+            age--;
+        return age;
+    }
+
+    /// <summary>
     /// Validates whether the student's date of birth represents a valid age in the past.
     /// </summary>
     public static bool IsValidDateOfBirth(DateOnly? dateOfBirth, DateOnly? referenceDate = null)
@@ -76,15 +88,11 @@ public static partial class StudentConstants
             return true; // Date of birth is optional
 
         var today = referenceDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        var dob = dateOfBirth.Value;
 
-        if (dob > today)
+        if (dateOfBirth.Value > today)
             return false;
 
-        var age = today.Year - dob.Year;
-        if (dob > today.AddYears(-age))
-            age--;
-
+        var age = CalculateAge(dateOfBirth.Value, today);
         return age is >= MinAgeYears and <= MaxAgeYears;
     }
 

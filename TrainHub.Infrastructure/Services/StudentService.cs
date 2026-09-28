@@ -207,8 +207,7 @@ public class StudentService : IStudentService
         // Enforce business rules and uniqueness
         await _studentValidator.ValidateUpdateAsync(id, dto, student.OrganizationId, cancellationToken);
 
-        student.UpdateStudentCode(dto.StudentCode);
-        student.UpdateProfile(dto.GuardianPhone, dto.AcademicYear, dto.DateOfBirth, dto.Notes);
+        student.UpdateProfile(dto.StudentCode, dto.GuardianPhone, dto.AcademicYear, dto.DateOfBirth, dto.Notes);
 
         _unitOfWork.Repository<Student>().Update(student);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

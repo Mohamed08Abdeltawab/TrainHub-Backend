@@ -163,13 +163,62 @@ public class StudentTests
         var newDob = new DateOnly(2004, 3, 20);
 
         // Act
-        student.UpdateProfile("+9876543210", "Sophomore", newDob, "Transferred from another school");
+        student.UpdateProfile("STU-UPDATED-001", "+9876543210", "Sophomore", newDob, "Transferred from another school");
 
         // Assert
+        student.StudentCode.Should().Be("STU-UPDATED-001");
         student.GuardianPhone.Should().Be("+9876543210");
         student.AcademicYear.Should().Be("Sophomore");
         student.DateOfBirth.Should().Be(newDob);
         student.Notes.Should().Be("Transferred from another school");
+    }
+
+    [Fact]
+    public void Create_NormalizesStudentCodeToUppercaseAndTrimmed()
+    {
+        // Act
+        var student = Student.Create(_validUserId, _validOrgId, "  stu-lower-001  ");
+
+        // Assert
+        student.StudentCode.Should().Be("STU-LOWER-001");
+    }
+
+    [Fact]
+    public void UpdateStudentCode_NormalizesStudentCodeToUppercaseAndTrimmed()
+    {
+        // Arrange
+        var student = Student.Create(_validUserId, _validOrgId, ValidStudentCode);
+
+        // Act
+        student.UpdateStudentCode("  stu-updated-002  ");
+
+        // Assert
+        student.StudentCode.Should().Be("STU-UPDATED-002");
+    }
+
+    [Fact]
+    public void UpdateProfile_NormalizesStudentCodeToUppercaseAndTrimmed()
+    {
+        // Arrange
+        var student = Student.Create(_validUserId, _validOrgId, ValidStudentCode);
+
+        // Act
+        student.UpdateProfile("  stu-profile-003  ", null, null, null, null);
+
+        // Assert
+        student.StudentCode.Should().Be("STU-PROFILE-003");
+    }
+
+    [Fact]
+    public void GuardStudentCode_ThrowsWithParameterNameCapturedByCallerArgumentExpression()
+    {
+        // Act
+        var customCode = "invalid#code";
+        var act = () => Student.Create(_validUserId, _validOrgId, customCode);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("studentCode");
     }
 
     [Fact]

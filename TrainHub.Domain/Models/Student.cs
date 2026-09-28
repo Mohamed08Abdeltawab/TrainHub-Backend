@@ -1,5 +1,4 @@
-using System;
-using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using TrainHub.Domain.Constants;
 
 namespace TrainHub.Domain.Models;
@@ -64,30 +63,11 @@ public partial class Student
         if (organizationId == Guid.Empty)
             throw new ArgumentException("OrganizationId cannot be empty.", nameof(organizationId));
 
-        if (!StudentConstants.IsValidStudentCode(studentCode))
-            throw new ArgumentException(
-                $"StudentCode '{studentCode}' is invalid. It must be between {StudentConstants.StudentCodeMinLength} and {StudentConstants.StudentCodeMaxLength} alphanumeric characters.",
-                nameof(studentCode));
-
-        if (!StudentConstants.IsValidGuardianPhone(guardianPhone))
-            throw new ArgumentException(
-                $"GuardianPhone '{guardianPhone}' exceeds {StudentConstants.GuardianPhoneMaxLength} characters or has an invalid format.",
-                nameof(guardianPhone));
-
-        if (!StudentConstants.IsValidAcademicYear(academicYear))
-            throw new ArgumentException(
-                $"AcademicYear exceeds {StudentConstants.AcademicYearMaxLength} characters.",
-                nameof(academicYear));
-
-        if (!StudentConstants.IsValidDateOfBirth(dateOfBirth))
-            throw new ArgumentException(
-                $"DateOfBirth must represent a valid age between {StudentConstants.MinAgeYears} and {StudentConstants.MaxAgeYears} years and cannot be in the future.",
-                nameof(dateOfBirth));
-
-        if (!StudentConstants.IsValidNotes(notes))
-            throw new ArgumentException(
-                $"Notes cannot exceed {StudentConstants.NotesMaxLength} characters.",
-                nameof(notes));
+        GuardStudentCode(studentCode);
+        GuardGuardianPhone(guardianPhone);
+        GuardAcademicYear(academicYear);
+        GuardDateOfBirth(dateOfBirth);
+        GuardNotes(notes);
 
         var now = DateTime.UtcNow;
 
@@ -96,7 +76,7 @@ public partial class Student
             Id = id ?? Guid.NewGuid(),
             UserId = userId,
             OrganizationId = organizationId,
-            StudentCode = studentCode.Trim(),
+            StudentCode = NormalizeStudentCode(studentCode),
             GuardianPhone = NormalizeString(guardianPhone),
             AcademicYear = NormalizeString(academicYear),
             DateOfBirth = dateOfBirth,
@@ -111,12 +91,9 @@ public partial class Student
     /// </summary>
     public void UpdateStudentCode(string newStudentCode)
     {
-        if (!StudentConstants.IsValidStudentCode(newStudentCode))
-            throw new ArgumentException(
-                $"StudentCode '{newStudentCode}' is invalid. It must be between {StudentConstants.StudentCodeMinLength} and {StudentConstants.StudentCodeMaxLength} alphanumeric characters.",
-                nameof(newStudentCode));
+        GuardStudentCode(newStudentCode);
 
-        StudentCode = newStudentCode.Trim();
+        StudentCode = NormalizeStudentCode(newStudentCode);
         UpdatedAt = DateTime.UtcNow;
     }
 
@@ -125,10 +102,7 @@ public partial class Student
     /// </summary>
     public void UpdateGuardianPhone(string? guardianPhone)
     {
-        if (!StudentConstants.IsValidGuardianPhone(guardianPhone))
-            throw new ArgumentException(
-                $"GuardianPhone '{guardianPhone}' exceeds {StudentConstants.GuardianPhoneMaxLength} characters or has an invalid format.",
-                nameof(guardianPhone));
+        GuardGuardianPhone(guardianPhone);
 
         GuardianPhone = NormalizeString(guardianPhone);
         UpdatedAt = DateTime.UtcNow;
@@ -139,10 +113,7 @@ public partial class Student
     /// </summary>
     public void UpdateAcademicYear(string? academicYear)
     {
-        if (!StudentConstants.IsValidAcademicYear(academicYear))
-            throw new ArgumentException(
-                $"AcademicYear exceeds {StudentConstants.AcademicYearMaxLength} characters.",
-                nameof(academicYear));
+        GuardAcademicYear(academicYear);
 
         AcademicYear = NormalizeString(academicYear);
         UpdatedAt = DateTime.UtcNow;
@@ -153,10 +124,7 @@ public partial class Student
     /// </summary>
     public void UpdateDateOfBirth(DateOnly? dateOfBirth)
     {
-        if (!StudentConstants.IsValidDateOfBirth(dateOfBirth))
-            throw new ArgumentException(
-                $"DateOfBirth must represent a valid age between {StudentConstants.MinAgeYears} and {StudentConstants.MaxAgeYears} years and cannot be in the future.",
-                nameof(dateOfBirth));
+        GuardDateOfBirth(dateOfBirth);
 
         DateOfBirth = dateOfBirth;
         UpdatedAt = DateTime.UtcNow;
@@ -167,10 +135,7 @@ public partial class Student
     /// </summary>
     public void UpdateNotes(string? notes)
     {
-        if (!StudentConstants.IsValidNotes(notes))
-            throw new ArgumentException(
-                $"Notes cannot exceed {StudentConstants.NotesMaxLength} characters.",
-                nameof(notes));
+        GuardNotes(notes);
 
         Notes = NormalizeString(notes);
         UpdatedAt = DateTime.UtcNow;
@@ -178,17 +143,26 @@ public partial class Student
 
     /// <summary>
     /// Updates all profile fields in a single operation while maintaining domain invariants.
+    /// Sets UpdatedAt only once during this single atomic operation.
     /// </summary>
     public void UpdateProfile(
+        string studentCode,
         string? guardianPhone,
         string? academicYear,
         DateOnly? dateOfBirth,
         string? notes)
     {
-        UpdateGuardianPhone(guardianPhone);
-        UpdateAcademicYear(academicYear);
-        UpdateDateOfBirth(dateOfBirth);
-        UpdateNotes(notes);
+        GuardStudentCode(studentCode);
+        GuardGuardianPhone(guardianPhone);
+        GuardAcademicYear(academicYear);
+        GuardDateOfBirth(dateOfBirth);
+        GuardNotes(notes);
+
+        StudentCode = NormalizeStudentCode(studentCode);
+        GuardianPhone = NormalizeString(guardianPhone);
+        AcademicYear = NormalizeString(academicYear);
+        DateOfBirth = dateOfBirth;
+        Notes = NormalizeString(notes);
         UpdatedAt = DateTime.UtcNow;
     }
 
@@ -201,21 +175,77 @@ public partial class Student
             return null;
 
         var today = asOf ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        var dob = DateOfBirth.Value;
 
-        if (dob > today)
+        if (DateOfBirth.Value > today)
             return null;
 
-        var age = today.Year - dob.Year;
-        if (dob > today.AddYears(-age))
-            age--;
-
-        return age;
+        return StudentConstants.CalculateAge(DateOfBirth.Value, today);
     }
+
+    #region Guard Methods
+
+    private static void GuardStudentCode(
+        string? code,
+        [CallerArgumentExpression(nameof(code))] string? paramName = null)
+    {
+        if (!StudentConstants.IsValidStudentCode(code))
+            throw new ArgumentException(
+                $"StudentCode '{code}' is invalid. It must be between {StudentConstants.StudentCodeMinLength} and {StudentConstants.StudentCodeMaxLength} alphanumeric characters.",
+                paramName);
+    }
+
+    private static void GuardGuardianPhone(
+        string? phone,
+        [CallerArgumentExpression(nameof(phone))] string? paramName = null)
+    {
+        if (!StudentConstants.IsValidGuardianPhone(phone))
+            throw new ArgumentException(
+                $"GuardianPhone '{phone}' exceeds {StudentConstants.GuardianPhoneMaxLength} characters or has an invalid format.",
+                paramName);
+    }
+
+    private static void GuardAcademicYear(
+        string? year,
+        [CallerArgumentExpression(nameof(year))] string? paramName = null)
+    {
+        if (!StudentConstants.IsValidAcademicYear(year))
+            throw new ArgumentException(
+                $"AcademicYear exceeds {StudentConstants.AcademicYearMaxLength} characters.",
+                paramName);
+    }
+
+    private static void GuardDateOfBirth(
+        DateOnly? dob,
+        [CallerArgumentExpression(nameof(dob))] string? paramName = null)
+    {
+        if (!StudentConstants.IsValidDateOfBirth(dob))
+            throw new ArgumentException(
+                $"DateOfBirth must represent a valid age between {StudentConstants.MinAgeYears} and {StudentConstants.MaxAgeYears} years and cannot be in the future.",
+                paramName);
+    }
+
+    private static void GuardNotes(
+        string? notes,
+        [CallerArgumentExpression(nameof(notes))] string? paramName = null)
+    {
+        if (!StudentConstants.IsValidNotes(notes))
+            throw new ArgumentException(
+                $"Notes cannot exceed {StudentConstants.NotesMaxLength} characters.",
+                paramName);
+    }
+
+    #endregion
+
+    #region Normalization
+
+    private static string NormalizeStudentCode(string code) =>
+        code.Trim().ToUpperInvariant();
 
     private static string? NormalizeString(string? value)
     {
         var trimmed = value?.Trim();
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
+
+    #endregion
 }
