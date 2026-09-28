@@ -64,6 +64,10 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentOrganizationService, Services.CurrentOrganizationService>();
 
+        // ── Student Services ────────────────────────────────────────
+        services.AddScoped<IStudentValidator, Services.StudentValidator>();
+        services.AddScoped<IStudentService, Services.StudentService>();
+
         // ── JWT Authentication ──────────────────────────────────────
         services.AddJwtAuthentication(configuration);
 
