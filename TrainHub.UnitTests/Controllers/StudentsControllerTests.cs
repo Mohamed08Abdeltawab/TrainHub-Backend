@@ -22,26 +22,30 @@ public class StudentsControllerTests
     }
 
     [Fact]
-    public async Task GetAll_ReturnsOkResultWithListOfStudents()
+    public async Task GetAll_ReturnsOkResultWithPagedResult()
     {
         // Arrange
-        var students = new List<StudentDto>
-        {
-            new() { Id = Guid.NewGuid(), StudentCode = "STU-001" },
-            new() { Id = Guid.NewGuid(), StudentCode = "STU-002" }
-        };
+        var pagedResult = new TrainHub.Application.Common.Models.PagedResult<StudentDto>(
+            new List<StudentDto>
+            {
+                new() { Id = Guid.NewGuid(), StudentCode = "STU-001" },
+                new() { Id = Guid.NewGuid(), StudentCode = "STU-002" }
+            },
+            totalCount: 2,
+            pageNumber: 1,
+            pageSize: 10);
 
-        _studentServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(students);
+        _studentServiceMock.Setup(s => s.GetPagedAsync(It.IsAny<StudentQueryParameters>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pagedResult);
 
         // Act
-        var result = await _controller.GetAll(CancellationToken.None);
+        var result = await _controller.GetAll(new StudentQueryParameters(), CancellationToken.None);
 
         // Assert
         var okResult = result.Result as OkObjectResult;
         okResult.Should().NotBeNull();
         okResult!.StatusCode.Should().Be(200);
-        okResult.Value.Should().BeEquivalentTo(students);
+        okResult.Value.Should().BeEquivalentTo(pagedResult);
     }
 
     [Fact]

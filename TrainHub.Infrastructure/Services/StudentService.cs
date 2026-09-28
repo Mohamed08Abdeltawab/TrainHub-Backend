@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
+using TrainHub.Application.Common.Models;
 using TrainHub.Application.Features.Students.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Models;
@@ -31,6 +32,92 @@ public class StudentService : IStudentService
         _currentOrganizationService = currentOrganizationService;
         _dbContext = dbContext;
         _logger = logger;
+    }
+
+    public async Task<PagedResult<StudentDto>> GetPagedAsync(StudentQueryParameters parameters, CancellationToken cancellationToken = default)
+    {
+        parameters ??= new StudentQueryParameters();
+
+        _logger.LogInformation("Retrieving paged students: Page {PageNumber}, Size {PageSize}, Sort {SortBy} (Desc: {Desc}).",
+            parameters.PageNumber, parameters.PageSize, parameters.SortBy, parameters.SortDescending);
+
+        // 1. Validate query parameters
+        _studentValidator.ValidateQuery(parameters);
+
+        // 2. Base query with user details (tenant filter applied automatically)
+        var query = _dbContext.Students
+            .AsNoTracking()
+            .Include(s => s.User)
+            .AsQueryable();
+
+        // 3. Search filter
+        if (!string.IsNullOrWhiteSpace(parameters.SearchTerm))
+        {
+            var term = parameters.SearchTerm.Trim();
+            query = query.Where(s =>
+                s.StudentCode.Contains(term) ||
+                (s.GuardianPhone != null && s.GuardianPhone.Contains(term)) ||
+                s.User.FirstName.Contains(term) ||
+                s.User.LastName.Contains(term) ||
+                (s.User.Email != null && s.User.Email.Contains(term)));
+        }
+
+        // 4. Specific field filters
+        if (!string.IsNullOrWhiteSpace(parameters.AcademicYear))
+        {
+            var year = parameters.AcademicYear.Trim();
+            query = query.Where(s => s.AcademicYear == year);
+        }
+
+        if (parameters.DateOfBirthFrom.HasValue)
+        {
+            query = query.Where(s => s.DateOfBirth >= parameters.DateOfBirthFrom.Value);
+        }
+
+        if (parameters.DateOfBirthTo.HasValue)
+        {
+            query = query.Where(s => s.DateOfBirth <= parameters.DateOfBirthTo.Value);
+        }
+
+        if (parameters.HasGuardianPhone.HasValue)
+        {
+            query = parameters.HasGuardianPhone.Value
+                ? query.Where(s => s.GuardianPhone != null && s.GuardianPhone != "")
+                : query.Where(s => s.GuardianPhone == null || s.GuardianPhone == "");
+        }
+
+        if (parameters.IsActive.HasValue)
+        {
+            query = query.Where(s => s.User.IsActive == parameters.IsActive.Value);
+        }
+
+        // 5. Total count before pagination
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        // 6. Sorting
+        var isDescending = parameters.SortDescending;
+        query = (parameters.SortBy?.Trim().ToLowerInvariant()) switch
+        {
+            "studentcode" => isDescending ? query.OrderByDescending(s => s.StudentCode) : query.OrderBy(s => s.StudentCode),
+            "firstname" => isDescending ? query.OrderByDescending(s => s.User.FirstName) : query.OrderBy(s => s.User.FirstName),
+            "lastname" => isDescending ? query.OrderByDescending(s => s.User.LastName) : query.OrderBy(s => s.User.LastName),
+            "email" => isDescending ? query.OrderByDescending(s => s.User.Email) : query.OrderBy(s => s.User.Email),
+            "academicyear" => isDescending ? query.OrderByDescending(s => s.AcademicYear) : query.OrderBy(s => s.AcademicYear),
+            "dateofbirth" => isDescending ? query.OrderByDescending(s => s.DateOfBirth) : query.OrderBy(s => s.DateOfBirth),
+            "updatedat" => isDescending ? query.OrderByDescending(s => s.UpdatedAt) : query.OrderBy(s => s.UpdatedAt),
+            _ => isDescending ? query.OrderByDescending(s => s.CreatedAt) : query.OrderBy(s => s.CreatedAt)
+        };
+
+        // 7. Pagination
+        var skip = (parameters.PageNumber - 1) * parameters.PageSize;
+        var items = await query
+            .Skip(skip)
+            .Take(parameters.PageSize)
+            .ToListAsync(cancellationToken);
+
+        var dtos = items.Select(MapToDto).ToList();
+
+        return new PagedResult<StudentDto>(dtos, totalCount, parameters.PageNumber, parameters.PageSize);
     }
 
     public async Task<StudentDto> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)

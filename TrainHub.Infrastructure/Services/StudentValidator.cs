@@ -22,6 +22,50 @@ public class StudentValidator : IStudentValidator
         _logger = logger;
     }
 
+    public void ValidateQuery(StudentQueryParameters query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var errors = new Dictionary<string, string[]>();
+
+        if (query.PageNumber < 1)
+        {
+            errors[nameof(query.PageNumber)] = ["Page number must be at least 1."];
+        }
+
+        if (query.PageSize < 1 || query.PageSize > StudentConstants.MaxPageSize)
+        {
+            errors[nameof(query.PageSize)] = [$"Page size must be between 1 and {StudentConstants.MaxPageSize}."];
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SearchTerm) && query.SearchTerm.Trim().Length > StudentConstants.SearchTermMaxLength)
+        {
+            errors[nameof(query.SearchTerm)] = [$"Search term cannot exceed {StudentConstants.SearchTermMaxLength} characters."];
+        }
+
+        if (query.DateOfBirthFrom.HasValue && query.DateOfBirthTo.HasValue && query.DateOfBirthFrom.Value > query.DateOfBirthTo.Value)
+        {
+            errors[nameof(query.DateOfBirthFrom)] = ["Date of birth 'from' date cannot be after 'to' date."];
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (query.DateOfBirthTo.HasValue && query.DateOfBirthTo.Value > today)
+        {
+            errors[nameof(query.DateOfBirthTo)] = ["Date of birth filter cannot be in the future."];
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SortBy) && !StudentConstants.IsValidSortField(query.SortBy))
+        {
+            errors[nameof(query.SortBy)] = [$"Invalid sort field '{query.SortBy}'. Allowed values: {string.Join(", ", StudentConstants.AllowedSortFields)}."];
+        }
+
+        if (errors.Count > 0)
+        {
+            _logger.LogWarning("Validation failed for student query parameters: {ErrorCount} errors.", errors.Count);
+            throw new ValidationException(errors);
+        }
+    }
+
     public async Task ValidateCreateAsync(CreateStudentDto dto, Guid organizationId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);

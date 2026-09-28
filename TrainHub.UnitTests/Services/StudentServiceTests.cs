@@ -251,4 +251,91 @@ public class StudentServiceTests : IDisposable
 
         _studentValidatorMock.Verify(v => v.ValidateDeleteAsync(student.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task GetPagedAsync_WithSearchTerm_FiltersMatchingStudents()
+    {
+        // Arrange
+        var user1 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "John", LastName = "Doe", Email = "john@test.com" };
+        var user2 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Jane", LastName = "Smith", Email = "jane@test.com" };
+        await _dbContext.ApplicationUsers.AddRangeAsync(user1, user2);
+
+        var student1 = Student.Create(user1.Id, _organizationId, "STU-100", guardianPhone: "+111222333");
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-200", guardianPhone: "+444555666");
+        await _dbContext.Students.AddRangeAsync(student1, student2);
+        await _dbContext.SaveChangesAsync();
+
+        var query = new StudentQueryParameters { SearchTerm = "John" };
+
+        // Act
+        var result = await _service.GetPagedAsync(query, CancellationToken.None);
+
+        // Assert
+        result.TotalCount.Should().Be(1);
+        result.Items.Should().ContainSingle(s => s.FirstName == "John");
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithAcademicYearAndDobFilter_ReturnsMatchingStudents()
+    {
+        // Arrange
+        var user1 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Student", LastName = "One" };
+        var user2 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Student", LastName = "Two" };
+        await _dbContext.ApplicationUsers.AddRangeAsync(user1, user2);
+
+        var student1 = Student.Create(user1.Id, _organizationId, "STU-YEAR-1", academicYear: "2026", dateOfBirth: new DateOnly(2005, 1, 1));
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-YEAR-2", academicYear: "2027", dateOfBirth: new DateOnly(2008, 1, 1));
+        await _dbContext.Students.AddRangeAsync(student1, student2);
+        await _dbContext.SaveChangesAsync();
+
+        var query = new StudentQueryParameters
+        {
+            AcademicYear = "2026",
+            DateOfBirthFrom = new DateOnly(2004, 1, 1),
+            DateOfBirthTo = new DateOnly(2006, 1, 1)
+        };
+
+        // Act
+        var result = await _service.GetPagedAsync(query, CancellationToken.None);
+
+        // Assert
+        result.TotalCount.Should().Be(1);
+        result.Items.Should().ContainSingle(s => s.StudentCode == "STU-YEAR-1");
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithPaginationAndSorting_ReturnsCorrectPage()
+    {
+        // Arrange
+        for (int i = 1; i <= 5; i++)
+        {
+            var user = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = $"User{i}", LastName = "Test" };
+            await _dbContext.ApplicationUsers.AddAsync(user);
+            var student = Student.Create(user.Id, _organizationId, $"STU-PAGE-{i:D2}");
+            await _dbContext.Students.AddAsync(student);
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var query = new StudentQueryParameters
+        {
+            PageNumber = 2,
+            PageSize = 2,
+            SortBy = "StudentCode",
+            SortDescending = false
+        };
+
+        // Act
+        var result = await _service.GetPagedAsync(query, CancellationToken.None);
+
+        // Assert
+        result.TotalCount.Should().Be(5);
+        result.TotalPages.Should().Be(3);
+        result.PageNumber.Should().Be(2);
+        result.PageSize.Should().Be(2);
+        result.HasPreviousPage.Should().BeTrue();
+        result.HasNextPage.Should().BeTrue();
+        result.Items.Should().HaveCount(2);
+        result.Items[0].StudentCode.Should().Be("STU-PAGE-03");
+        result.Items[1].StudentCode.Should().Be("STU-PAGE-04");
+    }
 }

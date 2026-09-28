@@ -16,8 +16,25 @@ public static partial class StudentConstants
     public const int MinAgeYears = 3;
     public const int MaxAgeYears = 120;
 
+    public const int DefaultPageNumber = 1;
+    public const int DefaultPageSize = 10;
+    public const int MaxPageSize = 100;
+    public const int SearchTermMaxLength = 100;
+
     public const string StudentCodePattern = @"^[a-zA-Z0-9_\-]+$";
     public const string GuardianPhonePattern = @"^\+?[0-9\s\-()]{7,20}$";
+
+    public static readonly IReadOnlyList<string> AllowedSortFields = new[]
+    {
+        "CreatedAt",
+        "UpdatedAt",
+        "StudentCode",
+        "AcademicYear",
+        "DateOfBirth",
+        "FirstName",
+        "LastName",
+        "Email"
+    };
 
     [GeneratedRegex(StudentCodePattern)]
     private static partial Regex StudentCodeRegex();
@@ -91,5 +108,16 @@ public static partial class StudentConstants
             return true;
 
         return notes.Trim().Length <= NotesMaxLength;
+    }
+
+    /// <summary>
+    /// Validates whether a sort field name is recognized and supported.
+    /// </summary>
+    public static bool IsValidSortField(string? sortField)
+    {
+        if (string.IsNullOrWhiteSpace(sortField))
+            return true;
+
+        return AllowedSortFields.Contains(sortField.Trim(), StringComparer.OrdinalIgnoreCase);
     }
 }

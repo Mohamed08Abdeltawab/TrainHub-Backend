@@ -230,4 +230,56 @@ public class StudentValidatorTests : IDisposable
         // Assert
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public void ValidateQuery_WithInvalidSortField_ThrowsValidationException()
+    {
+        // Arrange
+        var query = new StudentQueryParameters { SortBy = "NonExistentField" };
+
+        // Act
+        var act = () => _validator.ValidateQuery(query);
+
+        // Assert
+        act.Should().Throw<ValidationException>()
+            .Which.Errors.Should().ContainKey(nameof(StudentQueryParameters.SortBy));
+    }
+
+    [Fact]
+    public void ValidateQuery_WithDobFromAfterDobTo_ThrowsValidationException()
+    {
+        // Arrange
+        var query = new StudentQueryParameters
+        {
+            DateOfBirthFrom = new DateOnly(2010, 1, 1),
+            DateOfBirthTo = new DateOnly(2005, 1, 1)
+        };
+
+        // Act
+        var act = () => _validator.ValidateQuery(query);
+
+        // Assert
+        act.Should().Throw<ValidationException>()
+            .Which.Errors.Should().ContainKey(nameof(StudentQueryParameters.DateOfBirthFrom));
+    }
+
+    [Fact]
+    public void ValidateQuery_WithValidParameters_CompletesSuccessfully()
+    {
+        // Arrange
+        var query = new StudentQueryParameters
+        {
+            PageNumber = 1,
+            PageSize = 20,
+            SearchTerm = "John",
+            SortBy = "StudentCode",
+            SortDescending = true
+        };
+
+        // Act
+        var act = () => _validator.ValidateQuery(query);
+
+        // Assert
+        act.Should().NotThrow();
+    }
 }

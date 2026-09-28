@@ -21,4 +21,9 @@ public interface IStudentValidator
     /// Validates business rules before deleting a student (e.g. existence, ensuring no dependent enrollments or attendance records).
     /// </summary>
     Task ValidateDeleteAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates query, filtering, search, sorting, and pagination parameters.
+    /// </summary>
+    void ValidateQuery(StudentQueryParameters query);
 }

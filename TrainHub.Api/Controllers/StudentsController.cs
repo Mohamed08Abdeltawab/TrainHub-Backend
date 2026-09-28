@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TrainHub.Application.Common.Models;
 using TrainHub.Application.Features.Students.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
@@ -24,14 +25,18 @@ public class StudentsController : ControllerBase
     }
 
     /// <summary>
-    /// Retrieves all students within the current organization scope.
+    /// Retrieves a paginated list of students with optional search, filtering, and sorting within the current organization.
     /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<StudentDto>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IEnumerable<StudentDto>>> GetAll(CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(PagedResult<StudentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<PagedResult<StudentDto>>> GetAll(
+        [FromQuery] StudentQueryParameters parameters,
+        CancellationToken cancellationToken)
     {
         _logger.LogInformation("HTTP GET api/students received.");
-        var result = await _studentService.GetAllAsync(cancellationToken);
+        var result = await _studentService.GetPagedAsync(parameters, cancellationToken);
         return Ok(result);
     }
 

@@ -1,3 +1,4 @@
+using TrainHub.Application.Common.Models;
 using TrainHub.Application.Features.Students.DTOs;
 
 namespace TrainHub.Application.Interfaces;
@@ -7,6 +8,8 @@ namespace TrainHub.Application.Interfaces;
 /// </summary>
 public interface IStudentService
 {
+    Task<PagedResult<StudentDto>> GetPagedAsync(StudentQueryParameters parameters, CancellationToken cancellationToken = default);
+
     Task<StudentDto> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<IEnumerable<StudentDto>> GetAllAsync(CancellationToken cancellationToken = default);
