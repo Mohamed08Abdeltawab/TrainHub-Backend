@@ -1,0 +1,162 @@
+using FluentAssertions;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Moq;
+using TrainHub.Api.Controllers;
+using TrainHub.Application.Features.Instructors.DTOs;
+using TrainHub.Application.Interfaces;
+
+namespace TrainHub.UnitTests.Controllers;
+
+public class InstructorsControllerTests
+{
+    private readonly Mock<IInstructorService> _instructorServiceMock;
+    private readonly Mock<ILogger<InstructorsController>> _loggerMock;
+    private readonly InstructorsController _controller;
+
+    public InstructorsControllerTests()
+    {
+        _instructorServiceMock = new Mock<IInstructorService>();
+        _loggerMock = new Mock<ILogger<InstructorsController>>();
+        _controller = new InstructorsController(_instructorServiceMock.Object, _loggerMock.Object);
+    }
+
+    [Fact]
+    public async Task GetAll_ReturnsOkResultWithPagedResult()
+    {
+        // Arrange
+        var pagedResult = new TrainHub.Application.Common.Models.PagedResult<InstructorDto>(
+            new List<InstructorDto>
+            {
+                new() { Id = Guid.NewGuid(), Specialization = "DevOps" },
+                new() { Id = Guid.NewGuid(), Specialization = "Cloud" }
+            },
+            totalCount: 2,
+            pageNumber: 1,
+            pageSize: 10);
+
+        _instructorServiceMock.Setup(s => s.GetPagedAsync(It.IsAny<InstructorQueryParameters>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pagedResult);
+
+        // Act
+        var result = await _controller.GetAll(new InstructorQueryParameters(), CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(pagedResult);
+    }
+
+    [Fact]
+    public async Task GetById_ReturnsOkResultWithInstructor()
+    {
+        // Arrange
+        var instructorId = Guid.NewGuid();
+        var expectedInstructor = new InstructorDto
+        {
+            Id = instructorId,
+            Specialization = "Machine Learning",
+            UserId = Guid.NewGuid(),
+            OrganizationId = Guid.NewGuid()
+        };
+
+        _instructorServiceMock.Setup(s => s.GetByIdAsync(instructorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedInstructor);
+
+        // Act
+        var result = await _controller.GetById(instructorId, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(expectedInstructor);
+    }
+
+    [Fact]
+    public async Task Create_ReturnsCreatedAtActionResult()
+    {
+        // Arrange
+        var createDto = new CreateInstructorDto
+        {
+            UserId = Guid.NewGuid(),
+            Specialization = "Cybersecurity",
+            Bio = "Security specialist"
+        };
+
+        var createdInstructor = new InstructorDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = createDto.UserId,
+            Specialization = createDto.Specialization,
+            Bio = createDto.Bio
+        };
+
+        _instructorServiceMock.Setup(s => s.CreateAsync(createDto, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(createdInstructor);
+
+        // Act
+        var result = await _controller.Create(createDto, CancellationToken.None);
+
+        // Assert
+        var createdAtActionResult = result.Result as CreatedAtActionResult;
+        createdAtActionResult.Should().NotBeNull();
+        createdAtActionResult!.StatusCode.Should().Be(201);
+        createdAtActionResult.ActionName.Should().Be(nameof(InstructorsController.GetById));
+        createdAtActionResult.RouteValues.Should().ContainKey("id");
+        createdAtActionResult.RouteValues!["id"].Should().Be(createdInstructor.Id);
+        createdAtActionResult.Value.Should().BeEquivalentTo(createdInstructor);
+    }
+
+    [Fact]
+    public async Task Update_ReturnsOkResultWithUpdatedInstructor()
+    {
+        // Arrange
+        var instructorId = Guid.NewGuid();
+        var updateDto = new UpdateInstructorDto
+        {
+            Specialization = "Updated Specialization",
+            Bio = "Updated bio"
+        };
+
+        var updatedInstructor = new InstructorDto
+        {
+            Id = instructorId,
+            Specialization = updateDto.Specialization,
+            Bio = updateDto.Bio
+        };
+
+        _instructorServiceMock.Setup(s => s.UpdateAsync(instructorId, updateDto, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(updatedInstructor);
+
+        // Act
+        var result = await _controller.Update(instructorId, updateDto, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(updatedInstructor);
+    }
+
+    [Fact]
+    public async Task Delete_ReturnsNoContentResult()
+    {
+        // Arrange
+        var instructorId = Guid.NewGuid();
+
+        _instructorServiceMock.Setup(s => s.DeleteAsync(instructorId, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _controller.Delete(instructorId, CancellationToken.None);
+
+        // Assert
+        var noContentResult = result as NoContentResult;
+        noContentResult.Should().NotBeNull();
+        noContentResult!.StatusCode.Should().Be(204);
+
+        _instructorServiceMock.Verify(s => s.DeleteAsync(instructorId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+}

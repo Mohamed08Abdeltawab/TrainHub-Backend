@@ -68,6 +68,10 @@ public static class DependencyInjection
         services.AddScoped<IStudentValidator, Services.StudentValidator>();
         services.AddScoped<IStudentService, Services.StudentService>();
 
+        // ── Instructor Services ─────────────────────────────────────
+        services.AddScoped<IInstructorValidator, Services.InstructorValidator>();
+        services.AddScoped<IInstructorService, Services.InstructorService>();
+
         // ── JWT Authentication ──────────────────────────────────────
         services.AddJwtAuthentication(configuration);
 
