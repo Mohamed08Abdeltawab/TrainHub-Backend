@@ -337,4 +337,167 @@ public class InstructorValidatorTests : IDisposable
         // Assert
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public async Task ValidateLinkUserAsync_WhenInstructorIdEmpty_ThrowsValidationException()
+    {
+        // Act
+        var act = () => _validator.ValidateLinkUserAsync(Guid.Empty, Guid.NewGuid(), _organizationId, CancellationToken.None);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.Which.Errors.Should().ContainKey("instructorId");
+    }
+
+    [Fact]
+    public async Task ValidateLinkUserAsync_WhenUserIdEmpty_ThrowsValidationException()
+    {
+        // Act
+        var act = () => _validator.ValidateLinkUserAsync(Guid.NewGuid(), Guid.Empty, _organizationId, CancellationToken.None);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.Which.Errors.Should().ContainKey("newUserId");
+    }
+
+    [Fact]
+    public async Task ValidateLinkUserAsync_WhenInstructorNotFound_ThrowsNotFoundException()
+    {
+        // Arrange
+        var nonExistentInstructorId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        // Act
+        var act = () => _validator.ValidateLinkUserAsync(nonExistentInstructorId, userId, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Instructor*");
+    }
+
+    [Fact]
+    public async Task ValidateLinkUserAsync_WhenUserNotFound_ThrowsNotFoundException()
+    {
+        // Arrange
+        var instructor = Instructor.Create(Guid.NewGuid(), _organizationId, "Web Dev");
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        var nonExistentUserId = Guid.NewGuid();
+
+        // Act
+        var act = () => _validator.ValidateLinkUserAsync(instructor.Id, nonExistentUserId, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*User*");
+    }
+
+    [Fact]
+    public async Task ValidateLinkUserAsync_WhenUserInDifferentOrg_ThrowsBadRequestException()
+    {
+        // Arrange
+        var instructor = Instructor.Create(Guid.NewGuid(), _organizationId, "Web Dev");
+        _dbContext.Instructors.Add(instructor);
+
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = Guid.NewGuid(), // different org
+            FirstName = "Other",
+            LastName = "Org",
+            Email = "other@example.com",
+            IsActive = true
+        };
+        _dbContext.ApplicationUsers.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var act = () => _validator.ValidateLinkUserAsync(instructor.Id, user.Id, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*User does not belong to the target organization*");
+    }
+
+    [Fact]
+    public async Task ValidateLinkUserAsync_WhenUserInactive_ThrowsBadRequestException()
+    {
+        // Arrange
+        var instructor = Instructor.Create(Guid.NewGuid(), _organizationId, "Web Dev");
+        _dbContext.Instructors.Add(instructor);
+
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Inactive",
+            LastName = "User",
+            Email = "inactive@example.com",
+            IsActive = false
+        };
+        _dbContext.ApplicationUsers.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var act = () => _validator.ValidateLinkUserAsync(instructor.Id, user.Id, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*Cannot link an inactive user account*");
+    }
+
+    [Fact]
+    public async Task ValidateLinkUserAsync_WhenUserAlreadyLinkedToAnotherInstructor_ThrowsConflictException()
+    {
+        // Arrange
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Busy",
+            LastName = "Instructor",
+            Email = "busy@example.com",
+            IsActive = true
+        };
+        _dbContext.ApplicationUsers.Add(user);
+
+        var existingInstructor = Instructor.Create(user.Id, _organizationId, "Design");
+        var targetInstructor = Instructor.Create(Guid.NewGuid(), _organizationId, "Architecture");
+        _dbContext.Instructors.AddRange(existingInstructor, targetInstructor);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var act = () => _validator.ValidateLinkUserAsync(targetInstructor.Id, user.Id, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*already registered as an instructor*");
+    }
+
+    [Fact]
+    public async Task ValidateLinkUserAsync_WhenValid_DoesNotThrow()
+    {
+        // Arrange
+        var instructor = Instructor.Create(Guid.NewGuid(), _organizationId, "Data Science");
+        _dbContext.Instructors.Add(instructor);
+
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "New",
+            LastName = "Instructor",
+            Email = "newinst@example.com",
+            IsActive = true
+        };
+        _dbContext.ApplicationUsers.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var act = () => _validator.ValidateLinkUserAsync(instructor.Id, user.Id, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
 }

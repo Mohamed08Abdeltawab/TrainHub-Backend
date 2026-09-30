@@ -23,6 +23,11 @@ public interface IInstructorValidator
     Task ValidateDeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Validates business rules before linking an instructor to a user account (e.g. existence of instructor and user, matching organization, 1-to-1 uniqueness, active user state).
+    /// </summary>
+    Task ValidateLinkUserAsync(Guid instructorId, Guid newUserId, Guid organizationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validates query, filtering, search, sorting, and pagination parameters.
     /// </summary>
     void ValidateQuery(InstructorQueryParameters query);

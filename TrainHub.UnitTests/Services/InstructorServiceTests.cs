@@ -1,9 +1,11 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Moq;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Instructors.DTOs;
 using TrainHub.Application.Interfaces;
+using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure;
 using TrainHub.Infrastructure.Data;
@@ -18,6 +20,7 @@ public class InstructorServiceTests : IDisposable
     private readonly IUnitOfWork _unitOfWork;
     private readonly Mock<IInstructorValidator> _instructorValidatorMock;
     private readonly Mock<ICurrentOrganizationService> _currentOrgServiceMock;
+    private readonly Mock<UserManager<ApplicationUser>> _userManagerMock;
     private readonly Mock<ILogger<InstructorService>> _loggerMock;
     private readonly InstructorService _service;
     private readonly Guid _organizationId = Guid.NewGuid();
@@ -29,6 +32,15 @@ public class InstructorServiceTests : IDisposable
         _instructorValidatorMock = new Mock<IInstructorValidator>();
         _currentOrgServiceMock = new Mock<ICurrentOrganizationService>();
         _currentOrgServiceMock.Setup(s => s.OrganizationId).Returns(_organizationId);
+        _userManagerMock = TestHelpers.CreateMockUserManager();
+        _userManagerMock.Setup(m => m.FindByIdAsync(It.IsAny<string>()))
+            .ReturnsAsync((string id) => _dbContext.ApplicationUsers.Find(Guid.Parse(id)));
+        _userManagerMock.Setup(m => m.IsInRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()))
+            .ReturnsAsync(false);
+        _userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()))
+            .ReturnsAsync(IdentityResult.Success);
+        _userManagerMock.Setup(m => m.RemoveFromRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()))
+            .ReturnsAsync(IdentityResult.Success);
         _loggerMock = new Mock<ILogger<InstructorService>>();
 
         _service = new InstructorService(
@@ -36,6 +48,7 @@ public class InstructorServiceTests : IDisposable
             _instructorValidatorMock.Object,
             _currentOrgServiceMock.Object,
             _dbContext,
+            _userManagerMock.Object,
             _loggerMock.Object);
     }
 
@@ -285,6 +298,168 @@ public class InstructorServiceTests : IDisposable
 
         // Act
         var act = () => _service.DeleteAsync(nonExistentId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Instructor*");
+    }
+
+    [Fact]
+    public async Task LinkUserAsync_WhenValid_UpdatesUserIdAndAssignsRole()
+    {
+        // Arrange
+        var initialUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Initial",
+            LastName = "User"
+        };
+        var newUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Linked",
+            LastName = "User",
+            Email = "linked@example.com"
+        };
+        _dbContext.ApplicationUsers.AddRange(initialUser, newUser);
+
+        var instructor = Instructor.Create(initialUser.Id, _organizationId, "Robotics");
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.LinkUserAsync(instructor.Id, newUser.Id, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Id.Should().Be(instructor.Id);
+        result.UserId.Should().Be(newUser.Id);
+        result.FirstName.Should().Be("Linked");
+        result.LastName.Should().Be("User");
+
+        var updatedInstructor = await _dbContext.Instructors.FindAsync(instructor.Id);
+        updatedInstructor!.UserId.Should().Be(newUser.Id);
+
+        _instructorValidatorMock.Verify(v => v.ValidateLinkUserAsync(instructor.Id, newUser.Id, _organizationId, It.IsAny<CancellationToken>()), Times.Once);
+        _userManagerMock.Verify(m => m.AddToRoleAsync(It.Is<ApplicationUser>(u => u.Id == newUser.Id), AppRoles.Instructor), Times.Once);
+    }
+
+    [Fact]
+    public async Task LinkUserAsync_WhenRelinkingDifferentUser_RemovesRoleFromOldUserAndAddsToNewUser()
+    {
+        // Arrange
+        var oldUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Old",
+            LastName = "User"
+        };
+        var newUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "New",
+            LastName = "User"
+        };
+        _dbContext.ApplicationUsers.AddRange(oldUser, newUser);
+
+        var instructor = Instructor.Create(oldUser.Id, _organizationId, "Quantum Computing");
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        _userManagerMock.Setup(m => m.IsInRoleAsync(It.Is<ApplicationUser>(u => u.Id == oldUser.Id), AppRoles.Instructor))
+            .ReturnsAsync(true);
+
+        // Act
+        await _service.LinkUserAsync(instructor.Id, newUser.Id, CancellationToken.None);
+
+        // Assert
+        _userManagerMock.Verify(m => m.RemoveFromRoleAsync(It.Is<ApplicationUser>(u => u.Id == oldUser.Id), AppRoles.Instructor), Times.Once);
+        _userManagerMock.Verify(m => m.AddToRoleAsync(It.Is<ApplicationUser>(u => u.Id == newUser.Id), AppRoles.Instructor), Times.Once);
+    }
+
+    [Fact]
+    public async Task LinkUserAsync_WithDto_DelegatesAndSucceeds()
+    {
+        // Arrange
+        var initialUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Initial",
+            LastName = "User"
+        };
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "DTO",
+            LastName = "User"
+        };
+        _dbContext.ApplicationUsers.AddRange(initialUser, user);
+
+        var instructor = Instructor.Create(initialUser.Id, _organizationId, "Embedded Systems");
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new LinkInstructorUserDto { UserId = user.Id };
+
+        // Act
+        var result = await _service.LinkUserAsync(instructor.Id, dto, CancellationToken.None);
+
+        // Assert
+        result.UserId.Should().Be(user.Id);
+    }
+
+    [Fact]
+    public async Task LinkUserAsync_WhenNotFound_ThrowsNotFoundException()
+    {
+        // Arrange
+        var nonExistentId = Guid.NewGuid();
+
+        // Act
+        var act = () => _service.LinkUserAsync(nonExistentId, Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Instructor*");
+    }
+
+    [Fact]
+    public async Task GetByUserIdAsync_WhenExists_ReturnsInstructorDto()
+    {
+        // Arrange
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Find",
+            LastName = "Me"
+        };
+        _dbContext.ApplicationUsers.Add(user);
+
+        var instructor = Instructor.Create(user.Id, _organizationId, "Database Systems");
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetByUserIdAsync(user.Id, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Id.Should().Be(instructor.Id);
+        result.UserId.Should().Be(user.Id);
+        result.Specialization.Should().Be("Database Systems");
+    }
+
+    [Fact]
+    public async Task GetByUserIdAsync_WhenNotFound_ThrowsNotFoundException()
+    {
+        // Act
+        var act = () => _service.GetByUserIdAsync(Guid.NewGuid(), CancellationToken.None);
 
         // Assert
         await act.Should().ThrowAsync<NotFoundException>()

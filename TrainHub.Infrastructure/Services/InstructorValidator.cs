@@ -148,6 +148,67 @@ public class InstructorValidator : IInstructorValidator
         }
     }
 
+    public async Task ValidateLinkUserAsync(Guid instructorId, Guid newUserId, Guid organizationId, CancellationToken cancellationToken = default)
+    {
+        if (instructorId == Guid.Empty)
+        {
+            throw new ValidationException(nameof(instructorId), "Instructor ID cannot be empty.");
+        }
+
+        if (newUserId == Guid.Empty)
+        {
+            throw new ValidationException(nameof(newUserId), "User ID cannot be empty.");
+        }
+
+        // 1. Verify Instructor exists
+        var instructor = await _dbContext.Instructors
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(i => i.Id == instructorId, cancellationToken);
+
+        if (instructor == null)
+        {
+            _logger.LogWarning("Validation failed: Instructor '{InstructorId}' was not found for user linking.", instructorId);
+            throw new NotFoundException("Instructor", instructorId);
+        }
+
+        // 2. Verify User exists
+        var user = await _dbContext.ApplicationUsers
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == newUserId, cancellationToken);
+
+        if (user == null)
+        {
+            _logger.LogWarning("Validation failed: User '{UserId}' does not exist.", newUserId);
+            throw new NotFoundException("User", newUserId);
+        }
+
+        // 3. Verify User belongs to the specified organization
+        if (user.OrganizationId != organizationId)
+        {
+            _logger.LogWarning("Validation failed: User '{UserId}' belongs to organization '{UserOrgId}', expected '{ExpectedOrgId}'.",
+                newUserId, user.OrganizationId, organizationId);
+            throw new BadRequestException("User does not belong to the target organization.");
+        }
+
+        // 4. Verify User is active
+        if (!user.IsActive)
+        {
+            _logger.LogWarning("Validation failed: User '{UserId}' account is inactive.", newUserId);
+            throw new BadRequestException("Cannot link an inactive user account to an instructor.");
+        }
+
+        // 5. Verify User is not already linked to another instructor (1-to-1 constraint)
+        var alreadyLinked = await _dbContext.Instructors
+            .IgnoreQueryFilters()
+            .AnyAsync(i => i.UserId == newUserId && i.Id != instructorId, cancellationToken);
+
+        if (alreadyLinked)
+        {
+            _logger.LogWarning("Validation failed: User '{UserId}' is already linked to another instructor.", newUserId);
+            throw new ConflictException($"User with ID '{newUserId}' is already registered as an instructor.");
+        }
+    }
+
     private static void ValidateFieldConstraints(string? specialization, string? bio)
     {
         if (!InstructorConstants.IsValidSpecialization(specialization))

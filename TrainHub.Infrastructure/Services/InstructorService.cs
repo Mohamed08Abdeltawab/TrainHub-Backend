@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Common.Models;
 using TrainHub.Application.Features.Instructors.DTOs;
 using TrainHub.Application.Interfaces;
+using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure.Data;
 
@@ -18,6 +20,7 @@ public class InstructorService : IInstructorService
     private readonly IInstructorValidator _instructorValidator;
     private readonly ICurrentOrganizationService _currentOrganizationService;
     private readonly TrainHubDbContext _dbContext;
+    private readonly UserManager<ApplicationUser> _userManager;
     private readonly ILogger<InstructorService> _logger;
 
     public InstructorService(
@@ -25,12 +28,14 @@ public class InstructorService : IInstructorService
         IInstructorValidator instructorValidator,
         ICurrentOrganizationService currentOrganizationService,
         TrainHubDbContext dbContext,
+        UserManager<ApplicationUser> userManager,
         ILogger<InstructorService> logger)
     {
         _unitOfWork = unitOfWork;
         _instructorValidator = instructorValidator;
         _currentOrganizationService = currentOrganizationService;
         _dbContext = dbContext;
+        _userManager = userManager;
         _logger = logger;
     }
 
@@ -120,6 +125,24 @@ public class InstructorService : IInstructorService
         return MapToDto(instructor);
     }
 
+    public async Task<InstructorDto> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving instructor linked to user ID '{UserId}'.", userId);
+
+        var instructor = await _dbContext.Instructors
+            .AsNoTracking()
+            .Include(i => i.User)
+            .FirstOrDefaultAsync(i => i.UserId == userId, cancellationToken);
+
+        if (instructor == null)
+        {
+            _logger.LogWarning("No instructor was found linked to user ID '{UserId}'.", userId);
+            throw new NotFoundException("Instructor", $"UserId: {userId}");
+        }
+
+        return MapToDto(instructor);
+    }
+
     public async Task<IEnumerable<InstructorDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Retrieving all instructors within current tenant scope.");
@@ -160,11 +183,19 @@ public class InstructorService : IInstructorService
 
         _logger.LogInformation("Instructor '{InstructorId}' created successfully.", instructor.Id);
 
+        // Assign Instructor role if not already assigned
+        var identityUser = await _userManager.FindByIdAsync(dto.UserId.ToString());
+        if (identityUser != null && !await _userManager.IsInRoleAsync(identityUser, AppRoles.Instructor))
+        {
+            await _userManager.AddToRoleAsync(identityUser, AppRoles.Instructor);
+            _logger.LogInformation("Assigned Instructor role to user '{UserId}'.", dto.UserId);
+        }
+
         var user = await _dbContext.ApplicationUsers
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == dto.UserId, cancellationToken);
 
-        return MapToDto(instructor, user);
+        return MapToDto(instructor, user ?? identityUser);
     }
 
     public async Task<InstructorDto> UpdateAsync(Guid id, UpdateInstructorDto dto, CancellationToken cancellationToken = default)
@@ -196,6 +227,70 @@ public class InstructorService : IInstructorService
         return MapToDto(instructor);
     }
 
+    public async Task<InstructorDto> LinkUserAsync(Guid id, LinkInstructorUserDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+        return await LinkUserAsync(id, dto.UserId, cancellationToken);
+    }
+
+    public async Task<InstructorDto> LinkUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Linking instructor '{InstructorId}' to user '{UserId}'.", id, userId);
+
+        var instructor = await _dbContext.Instructors
+            .Include(i => i.User)
+            .FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
+
+        if (instructor == null)
+        {
+            _logger.LogWarning("Instructor '{InstructorId}' was not found for user linking.", id);
+            throw new NotFoundException("Instructor", id);
+        }
+
+        // Validate linking rules
+        await _instructorValidator.ValidateLinkUserAsync(id, userId, instructor.OrganizationId, cancellationToken);
+
+        var oldUserId = instructor.UserId;
+
+        instructor.LinkUser(userId);
+
+        _unitOfWork.Repository<Instructor>().Update(instructor);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Role management on user re-linking
+        if (oldUserId != userId)
+        {
+            var oldUserStillInstructor = await _dbContext.Instructors
+                .IgnoreQueryFilters()
+                .AnyAsync(i => i.UserId == oldUserId && i.Id != id, cancellationToken);
+
+            if (!oldUserStillInstructor)
+            {
+                var oldUser = await _userManager.FindByIdAsync(oldUserId.ToString());
+                if (oldUser != null && await _userManager.IsInRoleAsync(oldUser, AppRoles.Instructor))
+                {
+                    await _userManager.RemoveFromRoleAsync(oldUser, AppRoles.Instructor);
+                    _logger.LogInformation("Removed Instructor role from previous user '{UserId}'.", oldUserId);
+                }
+            }
+        }
+
+        var newUser = await _userManager.FindByIdAsync(userId.ToString());
+        if (newUser != null && !await _userManager.IsInRoleAsync(newUser, AppRoles.Instructor))
+        {
+            await _userManager.AddToRoleAsync(newUser, AppRoles.Instructor);
+            _logger.LogInformation("Assigned Instructor role to newly linked user '{UserId}'.", userId);
+        }
+
+        var user = await _dbContext.ApplicationUsers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        _logger.LogInformation("Instructor '{InstructorId}' successfully linked to user '{UserId}'.", id, userId);
+
+        return MapToDto(instructor, user ?? newUser);
+    }
+
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Deleting instructor '{InstructorId}'.", id);
@@ -210,8 +305,25 @@ public class InstructorService : IInstructorService
             throw new NotFoundException("Instructor", id);
         }
 
+        var userId = instructor.UserId;
+
         _unitOfWork.Repository<Instructor>().Delete(instructor);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // If the user no longer has any other instructor profile, remove the Instructor role
+        var stillInstructor = await _dbContext.Instructors
+            .IgnoreQueryFilters()
+            .AnyAsync(i => i.UserId == userId && i.Id != id, cancellationToken);
+
+        if (!stillInstructor)
+        {
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+            if (user != null && await _userManager.IsInRoleAsync(user, AppRoles.Instructor))
+            {
+                await _userManager.RemoveFromRoleAsync(user, AppRoles.Instructor);
+                _logger.LogInformation("Removed Instructor role from user '{UserId}' after instructor deletion.", userId);
+            }
+        }
 
         _logger.LogInformation("Instructor '{InstructorId}' deleted successfully.", id);
     }

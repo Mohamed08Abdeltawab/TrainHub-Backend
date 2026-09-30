@@ -97,4 +97,37 @@ public class InstructorsController : ControllerBase
         await _instructorService.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
+
+    /// <summary>
+    /// Links an existing instructor to a user account within the same organization.
+    /// </summary>
+    [HttpPut("{id:guid}/link-user")]
+    [HttpPost("{id:guid}/link-user")]
+    [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<InstructorDto>> LinkUser(
+        Guid id,
+        [FromBody] LinkInstructorUserDto dto,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP PUT api/instructors/{Id}/link-user received for user '{UserId}'.", id, dto.UserId);
+        var result = await _instructorService.LinkUserAsync(id, dto, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Retrieves the instructor profile linked to a specific user ID.
+    /// </summary>
+    [HttpGet("user/{userId:guid}")]
+    [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<InstructorDto>> GetByUserId(Guid userId, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP GET api/instructors/user/{UserId} received.", userId);
+        var result = await _instructorService.GetByUserIdAsync(userId, cancellationToken);
+        return Ok(result);
+    }
 }

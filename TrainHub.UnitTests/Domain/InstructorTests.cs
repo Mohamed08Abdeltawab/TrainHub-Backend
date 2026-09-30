@@ -214,4 +214,35 @@ public class InstructorTests
             setMethod!.IsPrivate.Should().BeTrue($"Property {prop.Name} setter should be private");
         }
     }
+
+    [Fact]
+    public void LinkUser_WithValidUserId_UpdatesUserIdAndTimestamp()
+    {
+        // Arrange
+        var instructor = Instructor.Create(_validUserId, _validOrgId, ValidSpecialization);
+        var initialUpdatedAt = instructor.UpdatedAt;
+        var newUserId = Guid.NewGuid();
+
+        // Act
+        instructor.LinkUser(newUserId);
+
+        // Assert
+        instructor.UserId.Should().Be(newUserId);
+        instructor.UpdatedAt.Should().BeOnOrAfter(initialUpdatedAt);
+    }
+
+    [Fact]
+    public void LinkUser_WithEmptyUserId_ThrowsArgumentException()
+    {
+        // Arrange
+        var instructor = Instructor.Create(_validUserId, _validOrgId, ValidSpecialization);
+
+        // Act
+        var act = () => instructor.LinkUser(Guid.Empty);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*UserId cannot be empty*")
+            .WithParameterName("newUserId");
+    }
 }

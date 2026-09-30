@@ -159,4 +159,55 @@ public class InstructorsControllerTests
 
         _instructorServiceMock.Verify(s => s.DeleteAsync(instructorId, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task LinkUser_ReturnsOkResultWithUpdatedInstructor()
+    {
+        // Arrange
+        var instructorId = Guid.NewGuid();
+        var linkDto = new LinkInstructorUserDto { UserId = Guid.NewGuid() };
+        var linkedInstructor = new InstructorDto
+        {
+            Id = instructorId,
+            UserId = linkDto.UserId,
+            Specialization = "Distributed Systems"
+        };
+
+        _instructorServiceMock.Setup(s => s.LinkUserAsync(instructorId, linkDto, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(linkedInstructor);
+
+        // Act
+        var result = await _controller.LinkUser(instructorId, linkDto, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(linkedInstructor);
+    }
+
+    [Fact]
+    public async Task GetByUserId_ReturnsOkResultWithInstructor()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var instructor = new InstructorDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            Specialization = "Networks & Security"
+        };
+
+        _instructorServiceMock.Setup(s => s.GetByUserIdAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(instructor);
+
+        // Act
+        var result = await _controller.GetByUserId(userId, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(instructor);
+    }
 }

@@ -107,6 +107,18 @@ public partial class Instructor
         UpdatedAt = DateTime.UtcNow;
     }
 
+    /// <summary>
+    /// Links the instructor entity to a new user account, validating domain invariants.
+    /// </summary>
+    public void LinkUser(Guid newUserId)
+    {
+        if (newUserId == Guid.Empty)
+            throw new ArgumentException("UserId cannot be empty.", nameof(newUserId));
+
+        UserId = newUserId;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
     #region Guard Methods
 
     private static void GuardSpecialization(
