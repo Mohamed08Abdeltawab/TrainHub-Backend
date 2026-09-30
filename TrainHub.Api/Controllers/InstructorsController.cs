@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TrainHub.Application.Common.Models;
@@ -12,15 +13,20 @@ namespace TrainHub.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Policy = AppPolicies.RequireOrgStaff)]
+[Authorize]
 public class InstructorsController : ControllerBase
 {
     private readonly IInstructorService _instructorService;
+    private readonly IInstructorAuthorizationService _authorizationService;
     private readonly ILogger<InstructorsController> _logger;
 
-    public InstructorsController(IInstructorService instructorService, ILogger<InstructorsController> logger)
+    public InstructorsController(
+        IInstructorService instructorService,
+        IInstructorAuthorizationService authorizationService,
+        ILogger<InstructorsController> logger)
     {
         _instructorService = instructorService;
+        _authorizationService = authorizationService;
         _logger = logger;
     }
 
@@ -28,6 +34,7 @@ public class InstructorsController : ControllerBase
     /// Retrieves a paginated list of instructors with optional search, filtering, and sorting within the current organization.
     /// </summary>
     [HttpGet]
+    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
     [ProducesResponseType(typeof(PagedResult<InstructorDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
@@ -41,9 +48,58 @@ public class InstructorsController : ControllerBase
     }
 
     /// <summary>
+    /// Retrieves the profile of the currently authenticated instructor.
+    /// </summary>
+    [HttpGet("me")]
+    [Authorize(Policy = AppPolicies.RequireInstructor)]
+    [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<InstructorDto>> GetCurrentInstructor(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (!userId.HasValue)
+        {
+            _logger.LogWarning("HTTP GET api/instructors/me received but no valid user ID found in claims.");
+            return Unauthorized();
+        }
+
+        _logger.LogInformation("HTTP GET api/instructors/me received for user '{UserId}'.", userId.Value);
+        var result = await _instructorService.GetCurrentInstructorAsync(userId.Value, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Updates the profile of the currently authenticated instructor.
+    /// </summary>
+    [HttpPut("me")]
+    [Authorize(Policy = AppPolicies.RequireInstructor)]
+    [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<InstructorDto>> UpdateCurrentInstructor(
+        [FromBody] UpdateInstructorDto dto,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (!userId.HasValue)
+        {
+            _logger.LogWarning("HTTP PUT api/instructors/me received but no valid user ID found in claims.");
+            return Unauthorized();
+        }
+
+        _logger.LogInformation("HTTP PUT api/instructors/me received for user '{UserId}'.", userId.Value);
+        var result = await _instructorService.UpdateCurrentInstructorAsync(userId.Value, dto, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Retrieves an instructor by their unique ID.
     /// </summary>
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<InstructorDto>> GetById(Guid id, CancellationToken cancellationToken)
@@ -57,6 +113,7 @@ public class InstructorsController : ControllerBase
     /// Creates a new instructor record for an existing user.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -73,13 +130,19 @@ public class InstructorsController : ControllerBase
     /// Updates an existing instructor record.
     /// </summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<InstructorDto>> Update(Guid id, [FromBody] UpdateInstructorDto dto, CancellationToken cancellationToken)
     {
         _logger.LogInformation("HTTP PUT api/instructors/{Id} received.", id);
+
+        var existing = await _instructorService.GetByIdAsync(id, cancellationToken);
+        _authorizationService.EnsureCanModifyInstructor(User, existing.UserId);
+
         var result = await _instructorService.UpdateAsync(id, dto, cancellationToken);
         return Ok(result);
     }
@@ -88,6 +151,7 @@ public class InstructorsController : ControllerBase
     /// Deletes an instructor if they have no active course groups or sessions.
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
@@ -103,6 +167,7 @@ public class InstructorsController : ControllerBase
     /// </summary>
     [HttpPut("{id:guid}/link-user")]
     [HttpPost("{id:guid}/link-user")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -122,6 +187,7 @@ public class InstructorsController : ControllerBase
     /// Retrieves the instructor profile linked to a specific user ID.
     /// </summary>
     [HttpGet("user/{userId:guid}")]
+    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<InstructorDto>> GetByUserId(Guid userId, CancellationToken cancellationToken)
@@ -129,5 +195,13 @@ public class InstructorsController : ControllerBase
         _logger.LogInformation("HTTP GET api/instructors/user/{UserId} received.", userId);
         var result = await _instructorService.GetByUserIdAsync(userId, cancellationToken);
         return Ok(result);
+    }
+
+    private Guid? GetCurrentUserId()
+    {
+        var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                      ?? User.FindFirstValue("sub");
+
+        return Guid.TryParse(idClaim, out var userId) ? userId : null;
     }
 }

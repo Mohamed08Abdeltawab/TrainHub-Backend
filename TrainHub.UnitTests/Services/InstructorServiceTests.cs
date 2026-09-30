@@ -465,4 +465,131 @@ public class InstructorServiceTests : IDisposable
         await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*Instructor*");
     }
+
+    [Fact]
+    public async Task GetPagedAsync_WithHasBioTrueFilter_ReturnsOnlyInstructorsWithBio()
+    {
+        // Arrange
+        var user1 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "With", LastName = "Bio" };
+        var user2 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Without", LastName = "Bio" };
+        _dbContext.ApplicationUsers.AddRange(user1, user2);
+
+        var inst1 = Instructor.Create(user1.Id, _organizationId, "Spec1", "I have a bio");
+        var inst2 = Instructor.Create(user2.Id, _organizationId, "Spec2", null);
+        _dbContext.Instructors.AddRange(inst1, inst2);
+        await _dbContext.SaveChangesAsync();
+
+        var query = new InstructorQueryParameters { HasBio = true };
+
+        // Act
+        var result = await _service.GetPagedAsync(query, CancellationToken.None);
+
+        // Assert
+        result.TotalCount.Should().Be(1);
+        result.Items.Should().ContainSingle(i => i.Bio == "I have a bio");
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithHasBioFalseFilter_ReturnsOnlyInstructorsWithoutBio()
+    {
+        // Arrange
+        var user1 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "With", LastName = "Bio" };
+        var user2 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Without", LastName = "Bio" };
+        _dbContext.ApplicationUsers.AddRange(user1, user2);
+
+        var inst1 = Instructor.Create(user1.Id, _organizationId, "Spec1", "I have a bio");
+        var inst2 = Instructor.Create(user2.Id, _organizationId, "Spec2", null);
+        _dbContext.Instructors.AddRange(inst1, inst2);
+        await _dbContext.SaveChangesAsync();
+
+        var query = new InstructorQueryParameters { HasBio = false };
+
+        // Act
+        var result = await _service.GetPagedAsync(query, CancellationToken.None);
+
+        // Assert
+        result.TotalCount.Should().Be(1);
+        result.Items.Should().ContainSingle(i => i.Bio == null);
+    }
+
+    [Fact]
+    public async Task GetCurrentInstructorAsync_WhenExists_ReturnsInstructorDto()
+    {
+        // Arrange
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Current",
+            LastName = "Instructor"
+        };
+        _dbContext.ApplicationUsers.Add(user);
+
+        var instructor = Instructor.Create(user.Id, _organizationId, "Robotics");
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetCurrentInstructorAsync(user.Id, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Id.Should().Be(instructor.Id);
+        result.UserId.Should().Be(user.Id);
+        result.Specialization.Should().Be("Robotics");
+    }
+
+    [Fact]
+    public async Task GetCurrentInstructorAsync_WhenNotFound_ThrowsNotFoundException()
+    {
+        // Act
+        var act = () => _service.GetCurrentInstructorAsync(Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Instructor*");
+    }
+
+    [Fact]
+    public async Task UpdateCurrentInstructorAsync_WhenExists_UpdatesAndReturnsInstructorDto()
+    {
+        // Arrange
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Current",
+            LastName = "Instructor"
+        };
+        _dbContext.ApplicationUsers.Add(user);
+
+        var instructor = Instructor.Create(user.Id, _organizationId, "Robotics", "Old Bio");
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        var updateDto = new UpdateInstructorDto
+        {
+            Specialization = "Autonomous Systems",
+            Bio = "New Bio"
+        };
+
+        // Act
+        var result = await _service.UpdateCurrentInstructorAsync(user.Id, updateDto, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Specialization.Should().Be("Autonomous Systems");
+        result.Bio.Should().Be("New Bio");
+    }
+
+    [Fact]
+    public async Task UpdateCurrentInstructorAsync_WhenNotFound_ThrowsNotFoundException()
+    {
+        // Act
+        var act = () => _service.UpdateCurrentInstructorAsync(Guid.NewGuid(), new UpdateInstructorDto { Specialization = "Robotics" }, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Instructor*");
+    }
 }

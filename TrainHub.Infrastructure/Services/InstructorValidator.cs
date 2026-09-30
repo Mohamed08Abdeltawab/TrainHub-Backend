@@ -113,6 +113,14 @@ public class InstructorValidator : IInstructorValidator
             _logger.LogWarning("Validation failed: Instructor '{InstructorId}' was not found for update.", id);
             throw new NotFoundException("Instructor", id);
         }
+
+        // 2. Verify Instructor belongs to the target organization
+        if (instructor.OrganizationId != organizationId)
+        {
+            _logger.LogWarning("Validation failed: Instructor '{InstructorId}' belongs to organization '{OrgId}', expected '{ExpectedOrgId}'.",
+                id, instructor.OrganizationId, organizationId);
+            throw new BadRequestException("Instructor does not belong to the target organization.");
+        }
     }
 
     public async Task ValidateDeleteAsync(Guid id, CancellationToken cancellationToken = default)

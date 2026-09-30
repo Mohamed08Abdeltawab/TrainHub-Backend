@@ -54,6 +54,11 @@ public class InstructorQueryParameters
     public bool? IsActive { get; set; }
 
     /// <summary>
+    /// Filter instructors by whether they have a bio filled out.
+    /// </summary>
+    public bool? HasBio { get; set; }
+
+    /// <summary>
     /// Field to sort by. Supported values: "CreatedAt", "UpdatedAt", "Specialization", "FirstName", "LastName", "Email".
     /// </summary>
     public string? SortBy { get; set; } = "CreatedAt";

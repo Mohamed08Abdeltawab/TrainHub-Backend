@@ -80,6 +80,13 @@ public class InstructorService : IInstructorService
             query = query.Where(i => i.User.IsActive == parameters.IsActive.Value);
         }
 
+        if (parameters.HasBio.HasValue)
+        {
+            query = parameters.HasBio.Value
+                ? query.Where(i => i.Bio != null && i.Bio != "")
+                : query.Where(i => i.Bio == null || i.Bio == "");
+        }
+
         // 5. Total count before pagination
         var totalCount = await query.CountAsync(cancellationToken);
 
@@ -141,6 +148,31 @@ public class InstructorService : IInstructorService
         }
 
         return MapToDto(instructor);
+    }
+
+    public async Task<InstructorDto> GetCurrentInstructorAsync(Guid currentUserId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving current instructor profile for user ID '{UserId}'.", currentUserId);
+        return await GetByUserIdAsync(currentUserId, cancellationToken);
+    }
+
+    public async Task<InstructorDto> UpdateCurrentInstructorAsync(Guid currentUserId, UpdateInstructorDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        _logger.LogInformation("Updating current instructor profile for user ID '{UserId}'.", currentUserId);
+
+        var instructor = await _dbContext.Instructors
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.UserId == currentUserId, cancellationToken);
+
+        if (instructor == null)
+        {
+            _logger.LogWarning("No instructor profile found for current user ID '{UserId}' to update.", currentUserId);
+            throw new NotFoundException("Instructor", $"UserId: {currentUserId}");
+        }
+
+        return await UpdateAsync(instructor.Id, dto, cancellationToken);
     }
 
     public async Task<IEnumerable<InstructorDto>> GetAllAsync(CancellationToken cancellationToken = default)

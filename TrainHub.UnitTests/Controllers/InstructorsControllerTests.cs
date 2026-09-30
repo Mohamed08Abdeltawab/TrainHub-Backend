@@ -1,8 +1,11 @@
+using System.Security.Claims;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
 using TrainHub.Api.Controllers;
+using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Instructors.DTOs;
 using TrainHub.Application.Interfaces;
 
@@ -11,14 +14,19 @@ namespace TrainHub.UnitTests.Controllers;
 public class InstructorsControllerTests
 {
     private readonly Mock<IInstructorService> _instructorServiceMock;
+    private readonly Mock<IInstructorAuthorizationService> _authorizationServiceMock;
     private readonly Mock<ILogger<InstructorsController>> _loggerMock;
     private readonly InstructorsController _controller;
 
     public InstructorsControllerTests()
     {
         _instructorServiceMock = new Mock<IInstructorService>();
+        _authorizationServiceMock = new Mock<IInstructorAuthorizationService>();
         _loggerMock = new Mock<ILogger<InstructorsController>>();
-        _controller = new InstructorsController(_instructorServiceMock.Object, _loggerMock.Object);
+        _controller = new InstructorsController(
+            _instructorServiceMock.Object,
+            _authorizationServiceMock.Object,
+            _loggerMock.Object);
     }
 
     [Fact]
@@ -110,23 +118,34 @@ public class InstructorsControllerTests
     }
 
     [Fact]
-    public async Task Update_ReturnsOkResultWithUpdatedInstructor()
+    public async Task Update_WhenAuthorized_ReturnsOkResultWithUpdatedInstructor()
     {
         // Arrange
         var instructorId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var updateDto = new UpdateInstructorDto
         {
             Specialization = "Updated Specialization",
             Bio = "Updated bio"
         };
 
+        var existingInstructor = new InstructorDto
+        {
+            Id = instructorId,
+            UserId = userId,
+            Specialization = "Old Specialization"
+        };
+
         var updatedInstructor = new InstructorDto
         {
             Id = instructorId,
+            UserId = userId,
             Specialization = updateDto.Specialization,
             Bio = updateDto.Bio
         };
 
+        _instructorServiceMock.Setup(s => s.GetByIdAsync(instructorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingInstructor);
         _instructorServiceMock.Setup(s => s.UpdateAsync(instructorId, updateDto, It.IsAny<CancellationToken>()))
             .ReturnsAsync(updatedInstructor);
 
@@ -138,6 +157,38 @@ public class InstructorsControllerTests
         okResult.Should().NotBeNull();
         okResult!.StatusCode.Should().Be(200);
         okResult.Value.Should().BeEquivalentTo(updatedInstructor);
+
+        _authorizationServiceMock.Verify(a => a.EnsureCanModifyInstructor(It.IsAny<ClaimsPrincipal>(), userId), Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_WhenForbidden_ThrowsForbiddenAccessException()
+    {
+        // Arrange
+        var instructorId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var updateDto = new UpdateInstructorDto
+        {
+            Specialization = "Updated Specialization"
+        };
+
+        var existingInstructor = new InstructorDto
+        {
+            Id = instructorId,
+            UserId = userId
+        };
+
+        _instructorServiceMock.Setup(s => s.GetByIdAsync(instructorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingInstructor);
+        _authorizationServiceMock.Setup(a => a.EnsureCanModifyInstructor(It.IsAny<ClaimsPrincipal>(), userId))
+            .Throws(new ForbiddenAccessException("You do not have permission to modify another instructor's profile."));
+
+        // Act
+        var act = () => _controller.Update(instructorId, updateDto, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ForbiddenAccessException>()
+            .WithMessage("You do not have permission to modify another instructor's profile.");
     }
 
     [Fact]
@@ -209,5 +260,108 @@ public class InstructorsControllerTests
         okResult.Should().NotBeNull();
         okResult!.StatusCode.Should().Be(200);
         okResult.Value.Should().BeEquivalentTo(instructor);
+    }
+
+    [Fact]
+    public async Task GetCurrentInstructor_WithValidUserClaim_ReturnsOkResult()
+    {
+        // Arrange
+        var currentUserId = Guid.NewGuid();
+        var claims = new[] { new Claim(ClaimTypes.NameIdentifier, currentUserId.ToString()) };
+        var identity = new ClaimsIdentity(claims, "TestAuth");
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+        };
+
+        var expectedInstructor = new InstructorDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = currentUserId,
+            Specialization = "Web Development"
+        };
+
+        _instructorServiceMock.Setup(s => s.GetCurrentInstructorAsync(currentUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedInstructor);
+
+        // Act
+        var result = await _controller.GetCurrentInstructor(CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(expectedInstructor);
+    }
+
+    [Fact]
+    public async Task GetCurrentInstructor_WithoutUserClaim_ReturnsUnauthorized()
+    {
+        // Arrange
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+
+        // Act
+        var result = await _controller.GetCurrentInstructor(CancellationToken.None);
+
+        // Assert
+        var unauthorizedResult = result.Result as UnauthorizedResult;
+        unauthorizedResult.Should().NotBeNull();
+        unauthorizedResult!.StatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task UpdateCurrentInstructor_WithValidUserClaim_ReturnsOkResult()
+    {
+        // Arrange
+        var currentUserId = Guid.NewGuid();
+        var claims = new[] { new Claim(ClaimTypes.NameIdentifier, currentUserId.ToString()) };
+        var identity = new ClaimsIdentity(claims, "TestAuth");
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+        };
+
+        var updateDto = new UpdateInstructorDto { Specialization = "Advanced C#" };
+        var updatedInstructor = new InstructorDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = currentUserId,
+            Specialization = "Advanced C#"
+        };
+
+        _instructorServiceMock.Setup(s => s.UpdateCurrentInstructorAsync(currentUserId, updateDto, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(updatedInstructor);
+
+        // Act
+        var result = await _controller.UpdateCurrentInstructor(updateDto, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(updatedInstructor);
+    }
+
+    [Fact]
+    public async Task UpdateCurrentInstructor_WithoutUserClaim_ReturnsUnauthorized()
+    {
+        // Arrange
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+
+        var updateDto = new UpdateInstructorDto { Specialization = "Advanced C#" };
+
+        // Act
+        var result = await _controller.UpdateCurrentInstructor(updateDto, CancellationToken.None);
+
+        // Assert
+        var unauthorizedResult = result.Result as UnauthorizedResult;
+        unauthorizedResult.Should().NotBeNull();
+        unauthorizedResult!.StatusCode.Should().Be(401);
     }
 }

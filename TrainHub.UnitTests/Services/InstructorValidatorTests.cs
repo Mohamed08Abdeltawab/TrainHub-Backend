@@ -216,6 +216,27 @@ public class InstructorValidatorTests : IDisposable
     }
 
     [Fact]
+    public async Task ValidateUpdateAsync_WhenInstructorInDifferentOrg_ThrowsBadRequestException()
+    {
+        // Arrange
+        var instructor = Instructor.Create(Guid.NewGuid(), Guid.NewGuid(), "Initial Spec"); // different org
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new UpdateInstructorDto
+        {
+            Specialization = "Updated Spec"
+        };
+
+        // Act
+        var act = () => _validator.ValidateUpdateAsync(instructor.Id, dto, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*Instructor does not belong to the target organization*");
+    }
+
+    [Fact]
     public async Task ValidateDeleteAsync_WhenInstructorNotFound_ThrowsNotFoundException()
     {
         // Arrange
