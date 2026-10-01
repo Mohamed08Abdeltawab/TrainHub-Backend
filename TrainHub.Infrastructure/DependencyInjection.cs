@@ -73,6 +73,10 @@ public static class DependencyInjection
         services.AddScoped<IInstructorService, Services.InstructorService>();
         services.AddScoped<IInstructorAuthorizationService, Services.InstructorAuthorizationService>();
 
+        // ── Course Services ─────────────────────────────────────────
+        services.AddScoped<ICourseValidator, Services.CourseValidator>();
+        services.AddScoped<ICourseService, Services.CourseService>();
+
         // ── JWT Authentication ──────────────────────────────────────
         services.AddJwtAuthentication(configuration);
 
