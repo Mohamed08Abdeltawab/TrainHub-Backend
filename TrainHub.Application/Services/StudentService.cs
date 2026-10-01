@@ -5,32 +5,28 @@ using TrainHub.Application.Common.Models;
 using TrainHub.Application.Features.Students.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Models;
-using TrainHub.Infrastructure.Data;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
 /// Service implementation for managing Student entities and operations.
 /// </summary>
 public class StudentService : IStudentService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly IStudentValidator _studentValidator;
     private readonly ICurrentOrganizationService _currentOrganizationService;
-    private readonly TrainHubDbContext _dbContext;
     private readonly ILogger<StudentService> _logger;
 
     public StudentService(
-        IUnitOfWork unitOfWork,
+        ITrainHubDbContext dbContext,
         IStudentValidator studentValidator,
         ICurrentOrganizationService currentOrganizationService,
-        TrainHubDbContext dbContext,
         ILogger<StudentService> logger)
     {
-        _unitOfWork = unitOfWork;
+        _dbContext = dbContext;
         _studentValidator = studentValidator;
         _currentOrganizationService = currentOrganizationService;
-        _dbContext = dbContext;
         _logger = logger;
     }
 
@@ -154,11 +150,11 @@ public class StudentService : IStudentService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var organizationId = dto.OrganizationId ?? _currentOrganizationService.OrganizationId;
+        var organizationId = _currentOrganizationService.OrganizationId;
         if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
         {
-            _logger.LogWarning("Cannot create student: Organization ID could not be determined.");
-            throw new BadRequestException("Organization ID must be provided or available in the current context.");
+            _logger.LogWarning("Cannot create student: Organization ID could not be determined from current context.");
+            throw new BadRequestException("Organization context is required.");
         }
 
         _logger.LogInformation("Creating student for user '{UserId}' in organization '{OrganizationId}' with code '{StudentCode}'.",
@@ -176,8 +172,8 @@ public class StudentService : IStudentService
             dto.DateOfBirth,
             dto.Notes);
 
-        await _unitOfWork.Repository<Student>().AddAsync(student, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _dbContext.Students.AddAsync(student, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Student '{StudentId}' created successfully.", student.Id);
 
@@ -209,8 +205,8 @@ public class StudentService : IStudentService
 
         student.UpdateProfile(dto.StudentCode, dto.GuardianPhone, dto.AcademicYear, dto.DateOfBirth, dto.Notes);
 
-        _unitOfWork.Repository<Student>().Update(student);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Students.Update(student);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Student '{StudentId}' updated successfully.", id);
 
@@ -224,15 +220,15 @@ public class StudentService : IStudentService
         // Enforce dependency and existence rules
         await _studentValidator.ValidateDeleteAsync(id, cancellationToken);
 
-        var student = await _unitOfWork.Repository<Student>().GetByIdAsync(id, cancellationToken);
+        var student = await _dbContext.Students.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
         if (student == null)
         {
             _logger.LogWarning("Student '{StudentId}' was not found for deletion.", id);
             throw new NotFoundException("Student", id);
         }
 
-        _unitOfWork.Repository<Student>().Delete(student);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Students.Remove(student);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Student '{StudentId}' deleted successfully.", id);
     }

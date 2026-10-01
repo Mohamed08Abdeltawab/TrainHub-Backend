@@ -8,10 +8,6 @@ namespace TrainHub.Application.Features.Courses.DTOs;
 /// </summary>
 public class CreateCourseDto
 {
-    /// <summary>
-    /// Target Organization ID. If null, the tenant context is derived automatically.
-    /// </summary>
-    public Guid? OrganizationId { get; set; }
 
     [Required(ErrorMessage = "Course name is required.")]
     [StringLength(CourseConstants.NameMaxLength, MinimumLength = CourseConstants.NameMinLength,

@@ -21,16 +21,13 @@ namespace TrainHub.Api.Controllers;
 public class InstructorsController : ControllerBase
 {
     private readonly IInstructorService _instructorService;
-    private readonly IInstructorAuthorizationService _authorizationService;
     private readonly ILogger<InstructorsController> _logger;
 
     public InstructorsController(
         IInstructorService instructorService,
-        IInstructorAuthorizationService authorizationService,
         ILogger<InstructorsController> logger)
     {
         _instructorService = instructorService;
-        _authorizationService = authorizationService;
         _logger = logger;
     }
 

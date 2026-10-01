@@ -6,13 +6,14 @@ using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure.Authentication;
 using TrainHub.Infrastructure.Data;
+using TrainHub.Infrastructure.Services;
 
 namespace TrainHub.Infrastructure;
 
 public static class DependencyInjection
 {
     /// <summary>
-    /// Registers Infrastructure-layer services: DbContext, Identity, repositories, and Unit of Work.
+    /// Registers Infrastructure-layer services: DbContext, Identity, token generation, and authentication.
     /// </summary>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
@@ -22,6 +23,8 @@ public static class DependencyInjection
         services.AddDbContext<TrainHubDbContext>(options =>
             options.UseSqlServer(
                 configuration.GetConnectionString("DefaultConnection")));
+
+        services.AddScoped<ITrainHubDbContext>(sp => sp.GetRequiredService<TrainHubDbContext>());
 
         // ── ASP.NET Identity ────────────────────────────────────────
         services.AddIdentityCore<ApplicationUser>(options =>
@@ -44,40 +47,15 @@ public static class DependencyInjection
         .AddRoles<IdentityRole<Guid>>()
         .AddEntityFrameworkStores<TrainHubDbContext>();
 
-        // ── Unit of Work & Repositories ─────────────────────────────
-        services.AddScoped<IUnitOfWork, UnitOfWork>();
-        services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
-
-        // ── Roles & Identity Services ────────────────────────────────
-        services.AddScoped<IRoleService, Services.RoleService>();
+        // ── Role Seeding ────────────────────────────────────────────
         services.AddScoped<IRoleSeeder, RoleSeeder>();
 
-        // ── Auth Services ────────────────────────────────────────────
-        services.AddScoped<IAuthService, Services.AuthService>();
-
-        // ── User Services ───────────────────────────────────────────
-        services.AddScoped<ICurrentUserService, Services.CurrentUserService>();
-
-        // ── Organization Services ───────────────────────────────────
-        services.AddScoped<IOrganizationValidator, Services.OrganizationValidator>();
-        services.AddScoped<IOrganizationService, Services.OrganizationService>();
+        // ── Tenant Context & HTTP Accessor ──────────────────────────
         services.AddHttpContextAccessor();
-        services.AddScoped<ICurrentOrganizationService, Services.CurrentOrganizationService>();
+        services.AddScoped<ICurrentOrganizationService, CurrentOrganizationService>();
 
-        // ── Student Services ────────────────────────────────────────
-        services.AddScoped<IStudentValidator, Services.StudentValidator>();
-        services.AddScoped<IStudentService, Services.StudentService>();
-
-        // ── Instructor Services ─────────────────────────────────────
-        services.AddScoped<IInstructorValidator, Services.InstructorValidator>();
-        services.AddScoped<IInstructorService, Services.InstructorService>();
-        services.AddScoped<IInstructorAuthorizationService, Services.InstructorAuthorizationService>();
-
-        // ── Course Services ─────────────────────────────────────────
-        services.AddScoped<ICourseValidator, Services.CourseValidator>();
-        services.AddScoped<ICourseService, Services.CourseService>();
-
-        // ── JWT Authentication ──────────────────────────────────────
+        // ── JWT Token Generation & Authentication ───────────────────
+        services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddJwtAuthentication(configuration);
 
         return services;

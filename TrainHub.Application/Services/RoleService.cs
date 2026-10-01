@@ -1,16 +1,15 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Roles.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Models;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
-/// Infrastructure implementation of IRoleService using ASP.NET Core Identity.
+/// Service implementation of IRoleService using ASP.NET Core Identity.
 /// </summary>
 public class RoleService : IRoleService
 {
@@ -40,8 +39,6 @@ public class RoleService : IRoleService
         _logger.LogInformation("Retrieved {Count} roles.", roles.Count);
         return roles;
     }
-
-    
 
     public async Task<UserRolesDto> GetUserRolesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
@@ -106,7 +103,6 @@ public class RoleService : IRoleService
 
         _logger.LogInformation("Role '{RoleName}' successfully assigned to user '{UserId}'.", normalizedRole, userId);
     }
-
 
     public async Task RemoveRoleAsync(Guid userId, string roleName, CancellationToken cancellationToken = default)
     {

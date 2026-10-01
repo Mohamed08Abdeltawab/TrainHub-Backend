@@ -13,18 +13,15 @@ namespace TrainHub.UnitTests.Controllers;
 public class InstructorsControllerTests
 {
     private readonly Mock<IInstructorService> _instructorServiceMock;
-    private readonly Mock<IInstructorAuthorizationService> _authorizationServiceMock;
     private readonly Mock<ILogger<InstructorsController>> _loggerMock;
     private readonly InstructorsController _controller;
 
     public InstructorsControllerTests()
     {
         _instructorServiceMock = new Mock<IInstructorService>();
-        _authorizationServiceMock = new Mock<IInstructorAuthorizationService>();
         _loggerMock = new Mock<ILogger<InstructorsController>>();
         _controller = new InstructorsController(
             _instructorServiceMock.Object,
-            _authorizationServiceMock.Object,
             _loggerMock.Object);
     }
 

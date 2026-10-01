@@ -8,18 +8,17 @@ using TrainHub.Application.Features.Auth.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
-using TrainHub.Infrastructure.Data;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
-/// Infrastructure implementation of IAuthService using ASP.NET Core Identity.
+/// Service implementation of IAuthService using ASP.NET Core Identity and JWT token generation.
 /// </summary>
 public class AuthService : IAuthService
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
-    private readonly TrainHubDbContext _dbContext;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly JwtSettings _jwtSettings;
     private readonly IOrganizationValidator _organizationValidator;
     private readonly ILogger<AuthService> _logger;
@@ -27,7 +26,7 @@ public class AuthService : IAuthService
     public AuthService(
         UserManager<ApplicationUser> userManager,
         IJwtTokenGenerator jwtTokenGenerator,
-        TrainHubDbContext dbContext,
+        ITrainHubDbContext dbContext,
         IOptions<JwtSettings> jwtOptions,
         IOrganizationValidator organizationValidator,
         ILogger<AuthService> logger)
@@ -49,8 +48,12 @@ public class AuthService : IAuthService
         await _organizationValidator.ValidateOrganizationActiveAsync(request.OrganizationId, cancellationToken);
 
         // ── Check for duplicate email within the organization ───────
-        var existingUser = await _userManager.FindByEmailAsync(request.Email);
-        if (existingUser != null && existingUser.OrganizationId == request.OrganizationId)
+        var normalizedEmail = _userManager.NormalizeEmail(request.Email);
+        var existingUser = await _dbContext.ApplicationUsers
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail && u.OrganizationId == request.OrganizationId, cancellationToken);
+
+        if (existingUser != null)
         {
             _logger.LogWarning("Email '{Email}' is already registered in organization '{OrganizationId}'.",
                 request.Email, request.OrganizationId);
@@ -141,7 +144,7 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Your account is currently inactive.");
         }
 
-        // ── Validate Organization is active and subscription healthy ─
+        // ── Validate Organization is active ─────────────────────────
         await _organizationValidator.ValidateOrganizationActiveAsync(user.OrganizationId, cancellationToken);
 
         var isPasswordValid = await _userManager.CheckPasswordAsync(user, request.Password);
@@ -202,7 +205,7 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Your account is currently inactive.");
         }
 
-        // ── Validate Organization is active and subscription healthy ─
+        // ── Validate Organization is active ─────────────────────────
         await _organizationValidator.ValidateOrganizationActiveAsync(user.OrganizationId, cancellationToken);
 
         var roles = await _userManager.GetRolesAsync(user);
@@ -241,7 +244,7 @@ public class AuthService : IAuthService
         if (user == null)
         {
             _logger.LogWarning("Logout failed: User '{UserId}' not found.", request.UserId);
-            return; // Idempotent: User already doesn't exist, treat as logged out.
+            return;
         }
 
         // Only revoke if the provided refresh token matches the current one in the database

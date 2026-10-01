@@ -7,34 +7,30 @@ using TrainHub.Application.Features.Instructors.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
-using TrainHub.Infrastructure.Data;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
 /// Service implementation for managing Instructor entities and operations.
 /// </summary>
 public class InstructorService : IInstructorService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly IInstructorValidator _instructorValidator;
     private readonly ICurrentOrganizationService _currentOrganizationService;
-    private readonly TrainHubDbContext _dbContext;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ILogger<InstructorService> _logger;
 
     public InstructorService(
-        IUnitOfWork unitOfWork,
+        ITrainHubDbContext dbContext,
         IInstructorValidator instructorValidator,
         ICurrentOrganizationService currentOrganizationService,
-        TrainHubDbContext dbContext,
         UserManager<ApplicationUser> userManager,
         ILogger<InstructorService> logger)
     {
-        _unitOfWork = unitOfWork;
+        _dbContext = dbContext;
         _instructorValidator = instructorValidator;
         _currentOrganizationService = currentOrganizationService;
-        _dbContext = dbContext;
         _userManager = userManager;
         _logger = logger;
     }
@@ -186,8 +182,8 @@ public class InstructorService : IInstructorService
             instructor.User.UpdatedAt = DateTime.UtcNow;
         }
 
-        _unitOfWork.Repository<Instructor>().Update(instructor);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Instructors.Update(instructor);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Instructor profile for user '{UserId}' updated successfully.", currentUserId);
 
@@ -219,11 +215,11 @@ public class InstructorService : IInstructorService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var organizationId = dto.OrganizationId ?? _currentOrganizationService.OrganizationId;
+        var organizationId = _currentOrganizationService.OrganizationId;
         if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
         {
-            _logger.LogWarning("Cannot create instructor: Organization ID could not be determined.");
-            throw new BadRequestException("Organization ID must be provided or available in the current context.");
+            _logger.LogWarning("Cannot create instructor: Organization ID could not be determined from current context.");
+            throw new BadRequestException("Organization context is required.");
         }
 
         _logger.LogInformation("Creating instructor for user '{UserId}' in organization '{OrganizationId}'.",
@@ -238,8 +234,8 @@ public class InstructorService : IInstructorService
             dto.Specialization,
             dto.Bio);
 
-        await _unitOfWork.Repository<Instructor>().AddAsync(instructor, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _dbContext.Instructors.AddAsync(instructor, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Instructor '{InstructorId}' created successfully.", instructor.Id);
 
@@ -279,8 +275,8 @@ public class InstructorService : IInstructorService
 
         instructor.UpdateProfile(dto.Specialization, dto.Bio);
 
-        _unitOfWork.Repository<Instructor>().Update(instructor);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Instructors.Update(instructor);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Instructor '{InstructorId}' updated successfully.", id);
 
@@ -314,8 +310,8 @@ public class InstructorService : IInstructorService
 
         instructor.LinkUser(userId);
 
-        _unitOfWork.Repository<Instructor>().Update(instructor);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Instructors.Update(instructor);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         // Role management on user re-linking
         if (oldUserId != userId)
@@ -358,7 +354,7 @@ public class InstructorService : IInstructorService
         // Enforce dependency and existence rules
         await _instructorValidator.ValidateDeleteAsync(id, cancellationToken);
 
-        var instructor = await _unitOfWork.Repository<Instructor>().GetByIdAsync(id, cancellationToken);
+        var instructor = await _dbContext.Instructors.FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
         if (instructor == null)
         {
             _logger.LogWarning("Instructor '{InstructorId}' was not found for deletion.", id);
@@ -367,8 +363,8 @@ public class InstructorService : IInstructorService
 
         var userId = instructor.UserId;
 
-        _unitOfWork.Repository<Instructor>().Delete(instructor);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Instructors.Remove(instructor);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         // If the user no longer has any other instructor profile, remove the Instructor role
         var stillInstructor = await _dbContext.Instructors

@@ -31,16 +31,5 @@ public class CreateOrganizationDto
     [MaxLength(500, ErrorMessage = "Logo URL cannot exceed 500 characters.")]
     public string? LogoUrl { get; set; }
 
-    [Required(ErrorMessage = "Subscription plan is required.")]
-    [MaxLength(50, ErrorMessage = "Subscription plan cannot exceed 50 characters.")]
-    public string SubscriptionPlan { get; set; } = "Trial";
-
-    [Required(ErrorMessage = "Subscription end date is required.")]
-    public DateTime SubscriptionEndsAt { get; set; }
-
-    [Required(ErrorMessage = "Subscription status is required.")]
-    [MaxLength(50, ErrorMessage = "Subscription status cannot exceed 50 characters.")]
-    public string SubscriptionStatus { get; set; } = "Trialing";
-
     public bool IsActive { get; set; } = true;
 }

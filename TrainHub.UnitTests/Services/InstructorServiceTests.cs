@@ -5,11 +5,10 @@ using Moq;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Instructors.DTOs;
 using TrainHub.Application.Interfaces;
+using TrainHub.Application.Services;
 using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
-using TrainHub.Infrastructure;
 using TrainHub.Infrastructure.Data;
-using TrainHub.Infrastructure.Services;
 using TrainHub.UnitTests.Common;
 
 namespace TrainHub.UnitTests.Services;
@@ -17,7 +16,6 @@ namespace TrainHub.UnitTests.Services;
 public class InstructorServiceTests : IDisposable
 {
     private readonly TrainHubDbContext _dbContext;
-    private readonly IUnitOfWork _unitOfWork;
     private readonly Mock<IInstructorValidator> _instructorValidatorMock;
     private readonly Mock<ICurrentOrganizationService> _currentOrgServiceMock;
     private readonly Mock<UserManager<ApplicationUser>> _userManagerMock;
@@ -28,7 +26,6 @@ public class InstructorServiceTests : IDisposable
     public InstructorServiceTests()
     {
         _dbContext = TestHelpers.CreateInMemoryDbContext();
-        _unitOfWork = new UnitOfWork(_dbContext);
         _instructorValidatorMock = new Mock<IInstructorValidator>();
         _currentOrgServiceMock = new Mock<ICurrentOrganizationService>();
         _currentOrgServiceMock.Setup(s => s.OrganizationId).Returns(_organizationId);
@@ -44,10 +41,9 @@ public class InstructorServiceTests : IDisposable
         _loggerMock = new Mock<ILogger<InstructorService>>();
 
         _service = new InstructorService(
-            _unitOfWork,
+            _dbContext,
             _instructorValidatorMock.Object,
             _currentOrgServiceMock.Object,
-            _dbContext,
             _userManagerMock.Object,
             _loggerMock.Object);
     }
@@ -56,7 +52,6 @@ public class InstructorServiceTests : IDisposable
     {
         _dbContext.Database.EnsureDeleted();
         _dbContext.Dispose();
-        _unitOfWork.Dispose();
     }
 
     [Fact]
@@ -115,7 +110,7 @@ public class InstructorServiceTests : IDisposable
 
         // Assert
         await act.Should().ThrowAsync<BadRequestException>()
-            .WithMessage("*Organization ID must be provided*");
+            .WithMessage("*Organization context is required*");
     }
 
     [Fact]

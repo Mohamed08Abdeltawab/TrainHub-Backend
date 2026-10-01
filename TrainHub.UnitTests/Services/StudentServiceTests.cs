@@ -4,10 +4,9 @@ using Moq;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Students.DTOs;
 using TrainHub.Application.Interfaces;
+using TrainHub.Application.Services;
 using TrainHub.Domain.Models;
-using TrainHub.Infrastructure;
 using TrainHub.Infrastructure.Data;
-using TrainHub.Infrastructure.Services;
 using TrainHub.UnitTests.Common;
 
 namespace TrainHub.UnitTests.Services;
@@ -15,7 +14,6 @@ namespace TrainHub.UnitTests.Services;
 public class StudentServiceTests : IDisposable
 {
     private readonly TrainHubDbContext _dbContext;
-    private readonly IUnitOfWork _unitOfWork;
     private readonly Mock<IStudentValidator> _studentValidatorMock;
     private readonly Mock<ICurrentOrganizationService> _currentOrgServiceMock;
     private readonly Mock<ILogger<StudentService>> _loggerMock;
@@ -25,17 +23,15 @@ public class StudentServiceTests : IDisposable
     public StudentServiceTests()
     {
         _dbContext = TestHelpers.CreateInMemoryDbContext();
-        _unitOfWork = new UnitOfWork(_dbContext);
         _studentValidatorMock = new Mock<IStudentValidator>();
         _currentOrgServiceMock = new Mock<ICurrentOrganizationService>();
         _currentOrgServiceMock.Setup(s => s.OrganizationId).Returns(_organizationId);
         _loggerMock = new Mock<ILogger<StudentService>>();
 
         _service = new StudentService(
-            _unitOfWork,
+            _dbContext,
             _studentValidatorMock.Object,
             _currentOrgServiceMock.Object,
-            _dbContext,
             _loggerMock.Object);
     }
 
@@ -43,7 +39,6 @@ public class StudentServiceTests : IDisposable
     {
         _dbContext.Database.EnsureDeleted();
         _dbContext.Dispose();
-        _unitOfWork.Dispose();
     }
 
     [Fact]
@@ -100,7 +95,7 @@ public class StudentServiceTests : IDisposable
 
         // Assert
         await act.Should().ThrowAsync<BadRequestException>()
-            .WithMessage("*Organization ID must be provided*");
+            .WithMessage("*Organization context is required*");
     }
 
     [Fact]

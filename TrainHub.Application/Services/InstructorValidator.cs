@@ -4,19 +4,18 @@ using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Instructors.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
-using TrainHub.Infrastructure.Data;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
 /// Validates business rules, unique constraints, and relational integrity for Instructors.
 /// </summary>
 public class InstructorValidator : IInstructorValidator
 {
-    private readonly TrainHubDbContext _dbContext;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly ILogger<InstructorValidator> _logger;
 
-    public InstructorValidator(TrainHubDbContext dbContext, ILogger<InstructorValidator> logger)
+    public InstructorValidator(ITrainHubDbContext dbContext, ILogger<InstructorValidator> logger)
     {
         _dbContext = dbContext;
         _logger = logger;
@@ -64,8 +63,6 @@ public class InstructorValidator : IInstructorValidator
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        ValidateFieldConstraints(dto.Specialization, dto.Bio);
-
         // 1. Verify User exists
         var user = await _dbContext.ApplicationUsers
             .IgnoreQueryFilters()
@@ -100,8 +97,6 @@ public class InstructorValidator : IInstructorValidator
     public async Task ValidateUpdateAsync(Guid id, UpdateInstructorDto dto, Guid organizationId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
-
-        ValidateFieldConstraints(dto.Specialization, dto.Bio);
 
         // 1. Verify Instructor exists
         var instructor = await _dbContext.Instructors
@@ -214,21 +209,6 @@ public class InstructorValidator : IInstructorValidator
         {
             _logger.LogWarning("Validation failed: User '{UserId}' is already linked to another instructor.", newUserId);
             throw new ConflictException($"User with ID '{newUserId}' is already registered as an instructor.");
-        }
-    }
-
-    private static void ValidateFieldConstraints(string? specialization, string? bio)
-    {
-        if (!InstructorConstants.IsValidSpecialization(specialization))
-        {
-            throw new ValidationException(nameof(specialization),
-                $"Specialization is invalid. It must be between {InstructorConstants.SpecializationMinLength} and {InstructorConstants.SpecializationMaxLength} characters.");
-        }
-
-        if (!InstructorConstants.IsValidBio(bio))
-        {
-            throw new ValidationException(nameof(bio),
-                $"Bio cannot exceed {InstructorConstants.BioMaxLength} characters.");
         }
     }
 }

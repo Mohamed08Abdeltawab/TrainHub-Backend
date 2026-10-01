@@ -8,7 +8,7 @@ using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure;
 using TrainHub.Infrastructure.Data;
-using TrainHub.Infrastructure.Services;
+using TrainHub.Application.Services;
 using TrainHub.UnitTests.Common;
 
 namespace TrainHub.UnitTests.Services;
@@ -16,7 +16,6 @@ namespace TrainHub.UnitTests.Services;
 public class CourseServiceTests : IDisposable
 {
     private readonly TrainHubDbContext _dbContext;
-    private readonly IUnitOfWork _unitOfWork;
     private readonly Mock<ICourseValidator> _courseValidatorMock;
     private readonly Mock<ICurrentOrganizationService> _currentOrgServiceMock;
     private readonly Mock<ILogger<CourseService>> _loggerMock;
@@ -26,17 +25,15 @@ public class CourseServiceTests : IDisposable
     public CourseServiceTests()
     {
         _dbContext = TestHelpers.CreateInMemoryDbContext();
-        _unitOfWork = new UnitOfWork(_dbContext);
         _courseValidatorMock = new Mock<ICourseValidator>();
         _currentOrgServiceMock = new Mock<ICurrentOrganizationService>();
         _currentOrgServiceMock.Setup(s => s.OrganizationId).Returns(_organizationId);
         _loggerMock = new Mock<ILogger<CourseService>>();
 
         _service = new CourseService(
-            _unitOfWork,
+            _dbContext,
             _courseValidatorMock.Object,
             _currentOrgServiceMock.Object,
-            _dbContext,
             _loggerMock.Object);
     }
 
@@ -44,7 +41,6 @@ public class CourseServiceTests : IDisposable
     {
         _dbContext.Database.EnsureDeleted();
         _dbContext.Dispose();
-        _unitOfWork.Dispose();
     }
 
     #region CreateAsync
@@ -100,14 +96,14 @@ public class CourseServiceTests : IDisposable
     {
         // Arrange
         _currentOrgServiceMock.Setup(s => s.OrganizationId).Returns((Guid?)null);
-        var dto = new CreateCourseDto { Name = "Test Course", OrganizationId = null };
+        var dto = new CreateCourseDto { Name = "Test Course" };
 
         // Act
         var act = () => _service.CreateAsync(dto);
 
         // Assert
         await act.Should().ThrowAsync<BadRequestException>()
-            .WithMessage("*Organization ID must be provided*");
+            .WithMessage("*Organization context is required*");
     }
 
     #endregion

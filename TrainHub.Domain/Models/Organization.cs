@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace TrainHub.Domain.Models;
@@ -18,12 +18,6 @@ public partial class Organization
     public string? Address { get; set; }
 
     public string? LogoUrl { get; set; }
-
-    public string SubscriptionPlan { get; set; } = null!;
-
-    public DateTime SubscriptionEndsAt { get; set; }
-
-    public string SubscriptionStatus { get; set; } = null!;
 
     public bool IsActive { get; set; }
 

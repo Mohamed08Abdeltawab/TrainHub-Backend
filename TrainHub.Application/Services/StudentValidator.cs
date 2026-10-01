@@ -4,19 +4,18 @@ using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Students.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
-using TrainHub.Infrastructure.Data;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
 /// Validates business rules, unique constraints, and relational integrity for Students.
 /// </summary>
 public class StudentValidator : IStudentValidator
 {
-    private readonly TrainHubDbContext _dbContext;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly ILogger<StudentValidator> _logger;
 
-    public StudentValidator(TrainHubDbContext dbContext, ILogger<StudentValidator> logger)
+    public StudentValidator(ITrainHubDbContext dbContext, ILogger<StudentValidator> logger)
     {
         _dbContext = dbContext;
         _logger = logger;
@@ -70,8 +69,6 @@ public class StudentValidator : IStudentValidator
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        ValidateFieldConstraints(dto.DateOfBirth, dto.GuardianPhone);
-
         // 1. Verify User exists
         var user = await _dbContext.ApplicationUsers
             .IgnoreQueryFilters()
@@ -119,8 +116,6 @@ public class StudentValidator : IStudentValidator
     public async Task ValidateUpdateAsync(Guid id, UpdateStudentDto dto, Guid organizationId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
-
-        ValidateFieldConstraints(dto.DateOfBirth, dto.GuardianPhone);
 
         // 1. Verify Student exists
         var student = await _dbContext.Students
@@ -177,21 +172,6 @@ public class StudentValidator : IStudentValidator
                 $"Cannot delete student '{student.StudentCode}' because they have associated records " +
                 $"({enrollmentCount} enrollment(s), {attendanceCount} attendance record(s)). " +
                 "Please remove or archive these records first.");
-        }
-    }
-
-    private static void ValidateFieldConstraints(DateOnly? dateOfBirth, string? guardianPhone)
-    {
-        if (!StudentConstants.IsValidDateOfBirth(dateOfBirth))
-        {
-            throw new ValidationException(nameof(dateOfBirth),
-                $"Date of birth must represent a valid age between {StudentConstants.MinAgeYears} and {StudentConstants.MaxAgeYears} years and cannot be in the future.");
-        }
-
-        if (!StudentConstants.IsValidGuardianPhone(guardianPhone))
-        {
-            throw new ValidationException(nameof(guardianPhone),
-                $"Guardian phone exceeds {StudentConstants.GuardianPhoneMaxLength} characters or has an invalid format.");
         }
     }
 }

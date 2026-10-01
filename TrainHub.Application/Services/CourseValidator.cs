@@ -4,19 +4,18 @@ using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Courses.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
-using TrainHub.Infrastructure.Data;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
 /// Validates business rules, unique constraints, and relational integrity for Courses.
 /// </summary>
 public class CourseValidator : ICourseValidator
 {
-    private readonly TrainHubDbContext _dbContext;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly ILogger<CourseValidator> _logger;
 
-    public CourseValidator(TrainHubDbContext dbContext, ILogger<CourseValidator> logger)
+    public CourseValidator(ITrainHubDbContext dbContext, ILogger<CourseValidator> logger)
     {
         _dbContext = dbContext;
         _logger = logger;
@@ -99,8 +98,6 @@ public class CourseValidator : ICourseValidator
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        ValidateFieldConstraints(dto.Name, dto.Description, dto.Category, dto.BasePrice, dto.DurationInHours, dto.ThumbnailUrl, dto.Status);
-
         // 1. Verify Organization exists
         var orgExists = await _dbContext.Organizations
             .IgnoreQueryFilters()
@@ -129,8 +126,6 @@ public class CourseValidator : ICourseValidator
     public async Task ValidateUpdateAsync(Guid id, UpdateCourseDto dto, Guid organizationId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
-
-        ValidateFieldConstraints(dto.Name, dto.Description, dto.Category, dto.BasePrice, dto.DurationInHours, dto.ThumbnailUrl, dto.Status);
 
         // 1. Verify Course exists
         var course = await _dbContext.Courses
@@ -182,58 +177,6 @@ public class CourseValidator : ICourseValidator
             throw new ConflictException(
                 $"Cannot delete course '{course.Name}' because it has {courseGroupCount} associated course group(s). " +
                 "Please remove or archive these groups first.");
-        }
-    }
-
-    private static void ValidateFieldConstraints(
-        string? name,
-        string? description,
-        string? category,
-        decimal basePrice,
-        int? durationInHours,
-        string? thumbnailUrl,
-        byte status)
-    {
-        if (!CourseConstants.IsValidName(name))
-        {
-            throw new ValidationException(nameof(name),
-                $"Course name must be between {CourseConstants.NameMinLength} and {CourseConstants.NameMaxLength} characters.");
-        }
-
-        if (!CourseConstants.IsValidDescription(description))
-        {
-            throw new ValidationException(nameof(description),
-                $"Description cannot exceed {CourseConstants.DescriptionMaxLength} characters.");
-        }
-
-        if (!CourseConstants.IsValidCategory(category))
-        {
-            throw new ValidationException(nameof(category),
-                $"Category must be between {CourseConstants.CategoryMinLength} and {CourseConstants.CategoryMaxLength} characters.");
-        }
-
-        if (!CourseConstants.IsValidBasePrice(basePrice))
-        {
-            throw new ValidationException(nameof(basePrice),
-                $"Base price must be between {CourseConstants.MinBasePrice} and {CourseConstants.MaxBasePrice}.");
-        }
-
-        if (!CourseConstants.IsValidDurationInHours(durationInHours))
-        {
-            throw new ValidationException(nameof(durationInHours),
-                $"Duration in hours must be between {CourseConstants.MinDurationInHours} and {CourseConstants.MaxDurationInHours}.");
-        }
-
-        if (!CourseConstants.IsValidThumbnailUrl(thumbnailUrl))
-        {
-            throw new ValidationException(nameof(thumbnailUrl),
-                $"Thumbnail URL is invalid. It must be a valid HTTP or HTTPS URL not exceeding {CourseConstants.ThumbnailUrlMaxLength} characters.");
-        }
-
-        if (!CourseConstants.IsValidStatus(status))
-        {
-            throw new ValidationException(nameof(status),
-                $"Invalid status '{status}'. Allowed values are: {string.Join(", ", CourseConstants.Statuses.All)}.");
         }
     }
 }

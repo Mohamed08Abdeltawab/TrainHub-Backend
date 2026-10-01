@@ -6,7 +6,7 @@ using TrainHub.Application.Features.Courses.DTOs;
 using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure.Data;
-using TrainHub.Infrastructure.Services;
+using TrainHub.Application.Services;
 using TrainHub.UnitTests.Common;
 
 namespace TrainHub.UnitTests.Services;
@@ -30,8 +30,7 @@ public class CourseValidatorTests : IDisposable
             Id = _organizationId,
             Name = "Test Org",
             Slug = "test-org",
-            SubscriptionPlan = OrganizationConstants.Plans.Basic,
-            SubscriptionStatus = OrganizationConstants.Statuses.Active
+            IsActive = true
         };
         _dbContext.Organizations.Add(org);
         _dbContext.SaveChanges();
@@ -113,8 +112,7 @@ public class CourseValidatorTests : IDisposable
             Id = otherOrgId,
             Name = "Other Org",
             Slug = "other-org",
-            SubscriptionPlan = OrganizationConstants.Plans.Basic,
-            SubscriptionStatus = OrganizationConstants.Statuses.Active
+            IsActive = true
         };
         var existing = Course.Create(otherOrgId, "Clean Architecture 101");
         _dbContext.Organizations.Add(otherOrg);
@@ -131,39 +129,6 @@ public class CourseValidatorTests : IDisposable
 
         // Assert
         await act.Should().NotThrowAsync();
-    }
-
-    [Fact]
-    public async Task ValidateCreateAsync_WithInvalidName_ThrowsValidationException()
-    {
-        // Arrange
-        var dto = new CreateCourseDto
-        {
-            Name = "A" // Too short (< 2)
-        };
-
-        // Act
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, CancellationToken.None);
-
-        // Assert
-        await act.Should().ThrowAsync<ValidationException>();
-    }
-
-    [Fact]
-    public async Task ValidateCreateAsync_WithNegativePrice_ThrowsValidationException()
-    {
-        // Arrange
-        var dto = new CreateCourseDto
-        {
-            Name = "Valid Name",
-            BasePrice = -50m
-        };
-
-        // Act
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, CancellationToken.None);
-
-        // Assert
-        await act.Should().ThrowAsync<ValidationException>();
     }
 
     #endregion

@@ -41,13 +41,21 @@ public partial class TrainHubDbContext
         var entries = ChangeTracker.Entries().Where(e => e.State == EntityState.Added);
         foreach (var entry in entries)
         {
+            if (entry.Entity is Organization)
+            {
+                continue;
+            }
+
             var property = entry.Properties.FirstOrDefault(p => p.Metadata.Name == "OrganizationId");
             if (property != null)
             {
-                if (property.CurrentValue is Guid guidValue && guidValue == Guid.Empty)
+                if (property.CurrentValue is Guid guidValue && guidValue != Guid.Empty && guidValue != CurrentOrganizationId.Value)
                 {
-                    property.CurrentValue = CurrentOrganizationId.Value;
+                    throw new InvalidOperationException(
+                        $"Cross-tenant operation detected: Entity of type '{entry.Entity.GetType().Name}' has OrganizationId '{guidValue}' which does not match active tenant context '{CurrentOrganizationId.Value}'.");
                 }
+
+                property.CurrentValue = CurrentOrganizationId.Value;
             }
         }
     }

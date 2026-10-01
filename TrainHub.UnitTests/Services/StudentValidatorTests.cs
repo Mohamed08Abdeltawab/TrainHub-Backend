@@ -5,7 +5,7 @@ using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Students.DTOs;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure.Data;
-using TrainHub.Infrastructure.Services;
+using TrainHub.Application.Services;
 using TrainHub.UnitTests.Common;
 
 namespace TrainHub.UnitTests.Services;

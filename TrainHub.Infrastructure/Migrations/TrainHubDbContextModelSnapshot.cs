@@ -313,7 +313,7 @@ namespace TrainHub.Infrastructure.Migrations
                     b.HasIndex(new[] { "SessionId", "StudentId" }, "IX_AttendanceRecords_Session_Student")
                         .IsUnique();
 
-                    b.ToTable("AttendanceRecords", (string)null);
+                    b.ToTable("AttendanceRecords");
                 });
 
             modelBuilder.Entity("TrainHub.Domain.Models.Course", b =>
@@ -368,7 +368,7 @@ namespace TrainHub.Infrastructure.Migrations
                     b.HasIndex(new[] { "OrganizationId", "Name" }, "IX_Courses_Org_Name")
                         .IsUnique();
 
-                    b.ToTable("Courses", (string)null);
+                    b.ToTable("Courses");
                 });
 
             modelBuilder.Entity("TrainHub.Domain.Models.CourseGroup", b =>
@@ -430,7 +430,7 @@ namespace TrainHub.Infrastructure.Migrations
 
                     b.HasIndex(new[] { "OrganizationId" }, "IX_CourseGroups_OrganizationId");
 
-                    b.ToTable("CourseGroups", (string)null);
+                    b.ToTable("CourseGroups");
                 });
 
             modelBuilder.Entity("TrainHub.Domain.Models.Enrollment", b =>
@@ -483,7 +483,7 @@ namespace TrainHub.Infrastructure.Migrations
 
                     b.HasIndex(new[] { "OrganizationId" }, "IX_Enrollments_OrganizationId");
 
-                    b.ToTable("Enrollments", (string)null);
+                    b.ToTable("Enrollments");
                 });
 
             modelBuilder.Entity("TrainHub.Domain.Models.Instructor", b =>
@@ -524,7 +524,7 @@ namespace TrainHub.Infrastructure.Migrations
                     b.HasIndex(new[] { "UserId" }, "IX_Instructors_UserId")
                         .IsUnique();
 
-                    b.ToTable("Instructors", (string)null);
+                    b.ToTable("Instructors");
                 });
 
             modelBuilder.Entity("TrainHub.Domain.Models.Organization", b =>
@@ -570,23 +570,6 @@ namespace TrainHub.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<DateTime>("SubscriptionEndsAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("SubscriptionPlan")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasDefaultValue("Trial", "DF_Organizations_SubscriptionPlan");
-
-                    b.Property<string>("SubscriptionStatus")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasDefaultValue("Trialing", "DF_Organizations_SubscriptionStatus");
-
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -597,7 +580,7 @@ namespace TrainHub.Infrastructure.Migrations
                     b.HasIndex(new[] { "Slug" }, "IX_Organizations_Slug")
                         .IsUnique();
 
-                    b.ToTable("Organizations", (string)null);
+                    b.ToTable("Organizations");
                 });
 
             modelBuilder.Entity("TrainHub.Domain.Models.Session", b =>
@@ -651,7 +634,7 @@ namespace TrainHub.Infrastructure.Migrations
 
                     b.HasIndex(new[] { "OrganizationId" }, "IX_Sessions_OrganizationId");
 
-                    b.ToTable("Sessions", (string)null);
+                    b.ToTable("Sessions");
                 });
 
             modelBuilder.Entity("TrainHub.Domain.Models.Student", b =>
@@ -705,7 +688,7 @@ namespace TrainHub.Infrastructure.Migrations
                     b.HasIndex(new[] { "UserId" }, "IX_Students_UserId")
                         .IsUnique();
 
-                    b.ToTable("Students", (string)null);
+                    b.ToTable("Students");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

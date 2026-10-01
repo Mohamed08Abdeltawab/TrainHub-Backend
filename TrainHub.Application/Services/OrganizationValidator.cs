@@ -4,23 +4,21 @@ using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Organizations.DTOs;
 using TrainHub.Application.Interfaces;
-using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
-using TrainHub.Infrastructure.Data;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
-/// Validates business rules, data integrity, and subscription health for Organizations.
+/// Validates business rules, data integrity, and tenant status for Organizations.
 /// </summary>
 public class OrganizationValidator : IOrganizationValidator
 {
     private static readonly Regex SlugRegex = new(@"^[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.Compiled);
-    private readonly TrainHubDbContext _dbContext;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly ILogger<OrganizationValidator> _logger;
 
     public OrganizationValidator(
-        TrainHubDbContext dbContext,
+        ITrainHubDbContext dbContext,
         ILogger<OrganizationValidator> logger)
     {
         _dbContext = dbContext;
@@ -31,7 +29,7 @@ public class OrganizationValidator : IOrganizationValidator
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        ValidateGeneralFields(dto.Name, dto.Slug, dto.SubscriptionPlan, dto.SubscriptionStatus, dto.SubscriptionEndsAt);
+        ValidateGeneralFields(dto.Name, dto.Slug);
 
         var normalizedSlug = dto.Slug.Trim().ToLowerInvariant();
 
@@ -51,7 +49,6 @@ public class OrganizationValidator : IOrganizationValidator
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        //if insert an invalid id
         var orgExists = await _dbContext.Organizations
             .IgnoreQueryFilters()
             .AnyAsync(o => o.Id == id, cancellationToken);
@@ -62,7 +59,7 @@ public class OrganizationValidator : IOrganizationValidator
             throw new NotFoundException(nameof(Organization), id);
         }
 
-        ValidateGeneralFields(dto.Name, dto.Slug, dto.SubscriptionPlan, dto.SubscriptionStatus, dto.SubscriptionEndsAt);
+        ValidateGeneralFields(dto.Name, dto.Slug);
 
         var normalizedSlug = dto.Slug.Trim().ToLowerInvariant();
 
@@ -91,7 +88,7 @@ public class OrganizationValidator : IOrganizationValidator
         }
 
         var userCount = await _dbContext.ApplicationUsers
-            .IgnoreQueryFilters()//search all students
+            .IgnoreQueryFilters()
             .CountAsync(u => u.OrganizationId == id, cancellationToken);
 
         var courseCount = await _dbContext.Courses
@@ -106,7 +103,7 @@ public class OrganizationValidator : IOrganizationValidator
             .IgnoreQueryFilters()
             .CountAsync(i => i.OrganizationId == id, cancellationToken);
 
-        if (userCount > 0 || courseCount > 0 || studentCount > 0 || instructorCount > 0)//if any table has rows then trow conflict
+        if (userCount > 0 || courseCount > 0 || studentCount > 0 || instructorCount > 0)
         {
             _logger.LogWarning("Validation failed: Cannot delete organization '{OrganizationId}' due to active dependencies.", id);
             throw new ConflictException(
@@ -133,28 +130,9 @@ public class OrganizationValidator : IOrganizationValidator
             _logger.LogWarning("Validation failed: Organization '{OrganizationId}' is inactive.", organizationId);
             throw new BadRequestException($"Organization '{organization.Name}' is currently inactive.");
         }
-
-        if (string.Equals(organization.SubscriptionStatus, OrganizationConstants.Statuses.Suspended, StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogWarning("Validation failed: Organization '{OrganizationId}' is suspended.", organizationId);
-            throw new BadRequestException($"Organization '{organization.Name}' subscription is suspended.");
-        }
-
-        if (string.Equals(organization.SubscriptionStatus, OrganizationConstants.Statuses.Canceled, StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogWarning("Validation failed: Organization '{OrganizationId}' subscription is canceled.", organizationId);
-            throw new BadRequestException($"Organization '{organization.Name}' subscription has been canceled.");
-        }
-
-        if (string.Equals(organization.SubscriptionStatus, OrganizationConstants.Statuses.Expired, StringComparison.OrdinalIgnoreCase) ||
-            organization.SubscriptionEndsAt < DateTime.UtcNow)
-        {
-            _logger.LogWarning("Validation failed: Organization '{OrganizationId}' subscription expired on {Expiry}.", organizationId, organization.SubscriptionEndsAt);
-            throw new BadRequestException($"Organization '{organization.Name}' subscription has expired.");
-        }
     }
 
-    private static void ValidateGeneralFields(string name, string slug, string plan, string status, DateTime subscriptionEndsAt)
+    private static void ValidateGeneralFields(string name, string slug)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -167,27 +145,6 @@ public class OrganizationValidator : IOrganizationValidator
             throw new ValidationException(
                 nameof(slug),
                 "Slug must contain only lowercase alphanumeric characters and hyphens, and cannot start or end with a hyphen.");
-        }
-
-        if (!OrganizationConstants.Plans.IsValidPlan(plan))
-        {
-            throw new ValidationException(
-                nameof(plan),
-                $"Subscription plan '{plan}' is not supported. Allowed plans are: {string.Join(", ", OrganizationConstants.Plans.All)}.");
-        }
-
-        if (!OrganizationConstants.Statuses.IsValidStatus(status))
-        {
-            throw new ValidationException(
-                nameof(status),
-                $"Subscription status '{status}' is not supported. Allowed statuses are: {string.Join(", ", OrganizationConstants.Statuses.All)}.");
-        }
-
-        if (subscriptionEndsAt == default || subscriptionEndsAt == DateTime.MinValue)
-        {
-            throw new ValidationException(
-                nameof(subscriptionEndsAt),
-                "Subscription end date must be a valid date.");
         }
     }
 }

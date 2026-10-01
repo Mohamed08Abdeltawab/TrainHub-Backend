@@ -6,32 +6,28 @@ using TrainHub.Application.Features.Courses.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
-using TrainHub.Infrastructure.Data;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
 /// Service implementation for managing Course entities and operations.
 /// </summary>
 public class CourseService : ICourseService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly ICourseValidator _courseValidator;
     private readonly ICurrentOrganizationService _currentOrganizationService;
-    private readonly TrainHubDbContext _dbContext;
     private readonly ILogger<CourseService> _logger;
 
     public CourseService(
-        IUnitOfWork unitOfWork,
+        ITrainHubDbContext dbContext,
         ICourseValidator courseValidator,
         ICurrentOrganizationService currentOrganizationService,
-        TrainHubDbContext dbContext,
         ILogger<CourseService> logger)
     {
-        _unitOfWork = unitOfWork;
+        _dbContext = dbContext;
         _courseValidator = courseValidator;
         _currentOrganizationService = currentOrganizationService;
-        _dbContext = dbContext;
         _logger = logger;
     }
 
@@ -158,11 +154,11 @@ public class CourseService : ICourseService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var organizationId = dto.OrganizationId ?? _currentOrganizationService.OrganizationId;
+        var organizationId = _currentOrganizationService.OrganizationId;
         if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
         {
-            _logger.LogWarning("Cannot create course: Organization ID could not be determined.");
-            throw new BadRequestException("Organization ID must be provided or available in the current context.");
+            _logger.LogWarning("Cannot create course: Organization ID could not be determined from current context.");
+            throw new BadRequestException("Organization context is required.");
         }
 
         _logger.LogInformation("Creating course '{CourseName}' in organization '{OrganizationId}'.",
@@ -181,8 +177,8 @@ public class CourseService : ICourseService
             dto.ThumbnailUrl,
             dto.Status);
 
-        await _unitOfWork.Repository<Course>().AddAsync(course, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _dbContext.Courses.AddAsync(course, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Course '{CourseId}' created successfully.", course.Id);
 
@@ -217,8 +213,8 @@ public class CourseService : ICourseService
             dto.ThumbnailUrl,
             dto.Status);
 
-        _unitOfWork.Repository<Course>().Update(course);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Courses.Update(course);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Course '{CourseId}' updated successfully.", id);
 
@@ -232,15 +228,15 @@ public class CourseService : ICourseService
         // Enforce dependency and existence rules
         await _courseValidator.ValidateDeleteAsync(id, cancellationToken);
 
-        var course = await _unitOfWork.Repository<Course>().GetByIdAsync(id, cancellationToken);
+        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         if (course == null)
         {
             _logger.LogWarning("Course '{CourseId}' was not found for deletion.", id);
             throw new NotFoundException("Course", id);
         }
 
-        _unitOfWork.Repository<Course>().Delete(course);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Courses.Remove(course);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Course '{CourseId}' deleted successfully.", id);
     }

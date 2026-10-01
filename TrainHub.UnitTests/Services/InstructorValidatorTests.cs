@@ -6,7 +6,7 @@ using TrainHub.Application.Features.Instructors.DTOs;
 using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure.Data;
-using TrainHub.Infrastructure.Services;
+using TrainHub.Application.Services;
 using TrainHub.UnitTests.Common;
 
 namespace TrainHub.UnitTests.Services;
@@ -108,43 +108,6 @@ public class InstructorValidatorTests : IDisposable
         // Assert
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*already registered as an instructor*");
-    }
-
-    [Fact]
-    public async Task ValidateCreateAsync_WhenSpecializationTooShort_ThrowsValidationException()
-    {
-        // Arrange
-        var dto = new CreateInstructorDto
-        {
-            UserId = Guid.NewGuid(),
-            Specialization = "A" // too short
-        };
-
-        // Act
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, CancellationToken.None);
-
-        // Assert
-        var ex = await act.Should().ThrowAsync<ValidationException>();
-        ex.Which.Errors.Should().ContainKey("specialization");
-    }
-
-    [Fact]
-    public async Task ValidateCreateAsync_WhenBioExceedsMaxLength_ThrowsValidationException()
-    {
-        // Arrange
-        var dto = new CreateInstructorDto
-        {
-            UserId = Guid.NewGuid(),
-            Specialization = "Full Stack",
-            Bio = new string('B', InstructorConstants.BioMaxLength + 1)
-        };
-
-        // Act
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, CancellationToken.None);
-
-        // Assert
-        var ex = await act.Should().ThrowAsync<ValidationException>();
-        ex.Which.Errors.Should().ContainKey("bio");
     }
 
     [Fact]

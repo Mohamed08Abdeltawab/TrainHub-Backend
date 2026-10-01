@@ -5,9 +5,11 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using TrainHub.Domain.Models;
 
+using TrainHub.Application.Interfaces;
+
 namespace TrainHub.Infrastructure.Data;
 
-public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
+public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>, ITrainHubDbContext
 {
     private readonly TrainHub.Application.Interfaces.ICurrentOrganizationService? _currentOrganizationService;
 
@@ -215,12 +217,6 @@ public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, Iden
             entity.Property(e => e.Name).HasMaxLength(200);
             entity.Property(e => e.Phone).HasMaxLength(20);
             entity.Property(e => e.Slug).HasMaxLength(100);
-            entity.Property(e => e.SubscriptionPlan)
-                .HasMaxLength(50)
-                .HasDefaultValue("Trial", "DF_Organizations_SubscriptionPlan");
-            entity.Property(e => e.SubscriptionStatus)
-                .HasMaxLength(50)
-                .HasDefaultValue("Trialing", "DF_Organizations_SubscriptionStatus");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())", "DF_Organizations_UpdatedAt");
         });
 

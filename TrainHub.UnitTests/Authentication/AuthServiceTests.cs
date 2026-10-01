@@ -10,7 +10,7 @@ using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure.Data;
-using TrainHub.Infrastructure.Services;
+using TrainHub.Application.Services;
 using TrainHub.UnitTests.Common;
 
 namespace TrainHub.UnitTests.Authentication;
@@ -101,12 +101,15 @@ public class AuthServiceTests
         var existingUser = new ApplicationUser
         {
             Id = Guid.NewGuid(),
+            FirstName = "Alice",
+            LastName = "Smith",
             Email = request.Email,
+            NormalizedEmail = request.Email.ToUpperInvariant(),
             OrganizationId = orgId
         };
 
-        _userManagerMock.Setup(m => m.FindByEmailAsync(request.Email))
-            .ReturnsAsync(existingUser);
+        _dbContext.ApplicationUsers.Add(existingUser);
+        await _dbContext.SaveChangesAsync();
 
         var service = CreateService();
 

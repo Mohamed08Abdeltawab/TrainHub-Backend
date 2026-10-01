@@ -1,26 +1,27 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Organizations.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Models;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
 /// Service implementation for managing Organizations.
 /// </summary>
 public class OrganizationService : IOrganizationService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly IOrganizationValidator _organizationValidator;
     private readonly ILogger<OrganizationService> _logger;
 
     public OrganizationService(
-        IUnitOfWork unitOfWork,
+        ITrainHubDbContext dbContext,
         IOrganizationValidator organizationValidator,
         ILogger<OrganizationService> logger)
     {
-        _unitOfWork = unitOfWork;
+        _dbContext = dbContext;
         _organizationValidator = organizationValidator;
         _logger = logger;
     }
@@ -29,7 +30,7 @@ public class OrganizationService : IOrganizationService
     {
         _logger.LogInformation("Retrieving organization with ID '{OrganizationId}'.", id);
 
-        var organization = await _unitOfWork.Repository<Organization>().GetByIdAsync(id, cancellationToken);
+        var organization = await _dbContext.Organizations.FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
         if (organization == null)
         {
             _logger.LogWarning("Organization '{OrganizationId}' was not found.", id);
@@ -43,7 +44,7 @@ public class OrganizationService : IOrganizationService
     {
         _logger.LogInformation("Retrieving all organizations.");
 
-        var organizations = await _unitOfWork.Repository<Organization>().GetAllAsync(cancellationToken);
+        var organizations = await _dbContext.Organizations.ToListAsync(cancellationToken);
         return organizations.Select(MapToDto).ToList();
     }
 
@@ -64,16 +65,13 @@ public class OrganizationService : IOrganizationService
             Phone = dto.Phone?.Trim(),
             Address = dto.Address?.Trim(),
             LogoUrl = dto.LogoUrl?.Trim(),
-            SubscriptionPlan = dto.SubscriptionPlan.Trim(),
-            SubscriptionEndsAt = dto.SubscriptionEndsAt,
-            SubscriptionStatus = dto.SubscriptionStatus.Trim(),
             IsActive = dto.IsActive,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _unitOfWork.Repository<Organization>().AddAsync(organization, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _dbContext.Organizations.AddAsync(organization, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Organization '{OrganizationId}' created successfully.", organization.Id);
 
@@ -89,7 +87,7 @@ public class OrganizationService : IOrganizationService
         // Validate business rules and conflict checks
         await _organizationValidator.ValidateUpdateAsync(id, dto, cancellationToken);
 
-        var organization = await _unitOfWork.Repository<Organization>().GetByIdAsync(id, cancellationToken);
+        var organization = await _dbContext.Organizations.FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
         if (organization == null)
         {
             _logger.LogWarning("Organization '{OrganizationId}' was not found for update.", id);
@@ -102,14 +100,11 @@ public class OrganizationService : IOrganizationService
         organization.Phone = dto.Phone?.Trim();
         organization.Address = dto.Address?.Trim();
         organization.LogoUrl = dto.LogoUrl?.Trim();
-        organization.SubscriptionPlan = dto.SubscriptionPlan.Trim();
-        organization.SubscriptionEndsAt = dto.SubscriptionEndsAt;
-        organization.SubscriptionStatus = dto.SubscriptionStatus.Trim();
         organization.IsActive = dto.IsActive;
         organization.UpdatedAt = DateTime.UtcNow;
 
-        _unitOfWork.Repository<Organization>().Update(organization);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Organizations.Update(organization);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Organization '{OrganizationId}' updated successfully.", id);
 
@@ -123,15 +118,15 @@ public class OrganizationService : IOrganizationService
         // Validate business rules and dependencies before deletion
         await _organizationValidator.ValidateDeleteAsync(id, cancellationToken);
 
-        var organization = await _unitOfWork.Repository<Organization>().GetByIdAsync(id, cancellationToken);
+        var organization = await _dbContext.Organizations.FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
         if (organization == null)
         {
             _logger.LogWarning("Organization '{OrganizationId}' was not found for deletion.", id);
             throw new NotFoundException(nameof(Organization), id);
         }
 
-        _unitOfWork.Repository<Organization>().Delete(organization);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _dbContext.Organizations.Remove(organization);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Organization '{OrganizationId}' deleted successfully.", id);
     }
@@ -147,9 +142,6 @@ public class OrganizationService : IOrganizationService
             Phone = organization.Phone,
             Address = organization.Address,
             LogoUrl = organization.LogoUrl,
-            SubscriptionPlan = organization.SubscriptionPlan,
-            SubscriptionEndsAt = organization.SubscriptionEndsAt,
-            SubscriptionStatus = organization.SubscriptionStatus,
             IsActive = organization.IsActive,
             CreatedAt = organization.CreatedAt,
             UpdatedAt = organization.UpdatedAt

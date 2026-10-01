@@ -11,11 +11,6 @@ public class CreateStudentDto
     [Required(ErrorMessage = "UserId is required.")]
     public Guid UserId { get; set; }
 
-    /// <summary>
-    /// Target Organization ID. If null, the tenant context is derived automatically.
-    /// </summary>
-    public Guid? OrganizationId { get; set; }
-
     [Required(ErrorMessage = "StudentCode is required.")]
     [StringLength(StudentConstants.StudentCodeMaxLength, MinimumLength = StudentConstants.StudentCodeMinLength,
         ErrorMessage = "Student code must be between 3 and 50 characters.")]

@@ -169,8 +169,8 @@ public class ExceptionHandlingMiddleware
     {
         DbUpdateConcurrencyException =>
             "The record was modified by another user. Please refresh and try again.",
-        DbUpdateException dbEx =>
-            dbEx.InnerException?.Message ?? "A database error occurred while saving changes.",
+        DbUpdateException =>
+            "A database conflict occurred while saving changes. A record with identical unique details may already exist, or a referenced entity is invalid.",
         OperationCanceledException =>
             "The request was cancelled by the client.",
         _ =>

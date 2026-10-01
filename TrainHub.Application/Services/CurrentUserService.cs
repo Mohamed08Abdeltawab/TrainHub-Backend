@@ -5,22 +5,21 @@ using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Users.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Models;
-using TrainHub.Infrastructure.Data;
 
-namespace TrainHub.Infrastructure.Services;
+namespace TrainHub.Application.Services;
 
 /// <summary>
-/// Infrastructure implementation of <see cref="ICurrentUserService"/> using ASP.NET Core Identity.
+/// Service implementation of <see cref="ICurrentUserService"/> using ASP.NET Core Identity.
 /// </summary>
 public class CurrentUserService : ICurrentUserService
 {
     private readonly UserManager<ApplicationUser> _userManager;
-    private readonly TrainHubDbContext _dbContext;
+    private readonly ITrainHubDbContext _dbContext;
     private readonly ILogger<CurrentUserService> _logger;
 
     public CurrentUserService(
         UserManager<ApplicationUser> userManager,
-        TrainHubDbContext dbContext,
+        ITrainHubDbContext dbContext,
         ILogger<CurrentUserService> logger)
     {
         _userManager = userManager;
