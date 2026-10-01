@@ -551,7 +551,41 @@ public class InstructorServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdateCurrentInstructorAsync_WhenExists_UpdatesAndReturnsInstructorDto()
+    public async Task UpdateCurrentInstructorProfileAsync_WhenExists_UpdatesBioAndPhoneNumber()
+    {
+        // Arrange
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Current",
+            LastName = "Instructor",
+            PhoneNumber = "+1111111111"
+        };
+        _dbContext.ApplicationUsers.Add(user);
+
+        var instructor = Instructor.Create(user.Id, _organizationId, "Robotics", "Old Bio");
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        var profileDto = new UpdateInstructorProfileDto
+        {
+            Bio = "Newly Updated Bio",
+            PhoneNumber = "+9999999999"
+        };
+
+        // Act
+        var result = await _service.UpdateCurrentInstructorProfileAsync(user.Id, profileDto, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Bio.Should().Be("Newly Updated Bio");
+        result.PhoneNumber.Should().Be("+9999999999");
+        result.Specialization.Should().Be("Robotics"); // Must not be changed by self-update!
+    }
+
+    [Fact]
+    public async Task UpdateCurrentInstructorAsync_WhenExists_UpdatesBioAndPreservesSpecialization()
     {
         // Arrange
         var user = new ApplicationUser
@@ -569,7 +603,7 @@ public class InstructorServiceTests : IDisposable
 
         var updateDto = new UpdateInstructorDto
         {
-            Specialization = "Autonomous Systems",
+            Specialization = "Attempted Specialization Change",
             Bio = "New Bio"
         };
 
@@ -578,7 +612,7 @@ public class InstructorServiceTests : IDisposable
 
         // Assert
         result.Should().NotBeNull();
-        result.Specialization.Should().Be("Autonomous Systems");
+        result.Specialization.Should().Be("Robotics"); // Specialization must remain unchanged on self-update!
         result.Bio.Should().Be("New Bio");
     }
 

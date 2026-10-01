@@ -156,14 +156,14 @@ public class InstructorService : IInstructorService
         return await GetByUserIdAsync(currentUserId, cancellationToken);
     }
 
-    public async Task<InstructorDto> UpdateCurrentInstructorAsync(Guid currentUserId, UpdateInstructorDto dto, CancellationToken cancellationToken = default)
+    public async Task<InstructorDto> UpdateCurrentInstructorProfileAsync(Guid currentUserId, UpdateInstructorProfileDto dto, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
         _logger.LogInformation("Updating current instructor profile for user ID '{UserId}'.", currentUserId);
 
         var instructor = await _dbContext.Instructors
-            .AsNoTracking()
+            .Include(i => i.User)
             .FirstOrDefaultAsync(i => i.UserId == currentUserId, cancellationToken);
 
         if (instructor == null)
@@ -172,7 +172,35 @@ public class InstructorService : IInstructorService
             throw new NotFoundException("Instructor", $"UserId: {currentUserId}");
         }
 
-        return await UpdateAsync(instructor.Id, dto, cancellationToken);
+        if (!InstructorConstants.IsValidBio(dto.Bio))
+        {
+            throw new ValidationException(nameof(dto.Bio),
+                $"Bio cannot exceed {InstructorConstants.BioMaxLength} characters.");
+        }
+
+        instructor.UpdateBio(dto.Bio);
+
+        if (dto.PhoneNumber != null)
+        {
+            instructor.User.PhoneNumber = dto.PhoneNumber;
+            instructor.User.UpdatedAt = DateTime.UtcNow;
+        }
+
+        _unitOfWork.Repository<Instructor>().Update(instructor);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Instructor profile for user '{UserId}' updated successfully.", currentUserId);
+
+        return MapToDto(instructor, instructor.User);
+    }
+
+    public async Task<InstructorDto> UpdateCurrentInstructorAsync(Guid currentUserId, UpdateInstructorDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+        return await UpdateCurrentInstructorProfileAsync(
+            currentUserId,
+            new UpdateInstructorProfileDto { Bio = dto.Bio },
+            cancellationToken);
     }
 
     public async Task<IEnumerable<InstructorDto>> GetAllAsync(CancellationToken cancellationToken = default)

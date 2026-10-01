@@ -46,6 +46,27 @@ public class InstructorAuthorizationServiceTests
         result.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(AppRoles.SuperAdmin)]
+    [InlineData(AppRoles.OrgAdmin)]
+    public void EnsureCanManageInstructors_WhenAuthorized_DoesNotThrow(string role)
+    {
+        var principal = CreatePrincipal(role);
+        var act = () => _service.EnsureCanManageInstructors(principal);
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(AppRoles.Instructor)]
+    [InlineData(AppRoles.Student)]
+    public void EnsureCanManageInstructors_WhenForbidden_ThrowsForbiddenAccessException(string role)
+    {
+        var principal = CreatePrincipal(role);
+        var act = () => _service.EnsureCanManageInstructors(principal);
+        act.Should().Throw<ForbiddenAccessException>()
+            .WithMessage("Only CenterAdmin and SuperAdmin are authorized to manage instructors.");
+    }
+
     #endregion
 
     #region CanViewInstructors
@@ -53,7 +74,7 @@ public class InstructorAuthorizationServiceTests
     [Theory]
     [InlineData(AppRoles.SuperAdmin, true)]
     [InlineData(AppRoles.OrgAdmin, true)]
-    [InlineData(AppRoles.Instructor, true)]
+    [InlineData(AppRoles.Instructor, false)]
     [InlineData(AppRoles.Student, false)]
     public void CanViewInstructors_ReturnsExpected(string role, bool expected)
     {
@@ -177,7 +198,7 @@ public class InstructorAuthorizationServiceTests
         var act = () => _service.EnsureCanModifyInstructor(principal, targetUserId);
 
         act.Should().Throw<ForbiddenAccessException>()
-            .WithMessage("You do not have permission to modify another instructor's profile.");
+            .WithMessage("An instructor is not permitted to view or modify other instructors' data.");
     }
 
     #endregion

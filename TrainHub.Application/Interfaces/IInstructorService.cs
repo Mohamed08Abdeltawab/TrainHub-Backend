@@ -29,4 +29,6 @@ public interface IInstructorService
     Task<InstructorDto> GetCurrentInstructorAsync(Guid currentUserId, CancellationToken cancellationToken = default);
 
     Task<InstructorDto> UpdateCurrentInstructorAsync(Guid currentUserId, UpdateInstructorDto dto, CancellationToken cancellationToken = default);
+
+    Task<InstructorDto> UpdateCurrentInstructorProfileAsync(Guid currentUserId, UpdateInstructorProfileDto dto, CancellationToken cancellationToken = default);
 }

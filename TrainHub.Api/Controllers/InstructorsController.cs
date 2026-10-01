@@ -10,6 +10,10 @@ namespace TrainHub.Api.Controllers;
 
 /// <summary>
 /// Manages Instructor profiles and records in the system.
+/// Enforces the Principle of Least Privilege:
+/// - Only CenterAdmin (scoped to their OrganizationId) and SuperAdmin are authorized to create, update, or delete instructors.
+/// - Instructors can never view or modify other instructors' data.
+/// - Instructors manage their own profile strictly through the dedicated /me endpoints.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -32,11 +36,13 @@ public class InstructorsController : ControllerBase
 
     /// <summary>
     /// Retrieves a paginated list of instructors with optional search, filtering, and sorting within the current organization.
+    /// Restricted to CenterAdmin (OrgAdmin) and SuperAdmin.
     /// </summary>
     [HttpGet]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(PagedResult<InstructorDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<PagedResult<InstructorDto>>> GetAll(
         [FromQuery] InstructorQueryParameters parameters,
@@ -49,6 +55,7 @@ public class InstructorsController : ControllerBase
 
     /// <summary>
     /// Retrieves the profile of the currently authenticated instructor.
+    /// Strictly limited to the instructor's own identity.
     /// </summary>
     [HttpGet("me")]
     [Authorize(Policy = AppPolicies.RequireInstructor)]
@@ -70,7 +77,8 @@ public class InstructorsController : ControllerBase
     }
 
     /// <summary>
-    /// Updates the profile of the currently authenticated instructor.
+    /// Updates the personal profile of the currently authenticated instructor.
+    /// Strictly restricted to basic personal info (bio, phone) and never financial details or status.
     /// </summary>
     [HttpPut("me")]
     [Authorize(Policy = AppPolicies.RequireInstructor)]
@@ -80,7 +88,7 @@ public class InstructorsController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<InstructorDto>> UpdateCurrentInstructor(
-        [FromBody] UpdateInstructorDto dto,
+        [FromBody] UpdateInstructorProfileDto dto,
         CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
@@ -91,16 +99,18 @@ public class InstructorsController : ControllerBase
         }
 
         _logger.LogInformation("HTTP PUT api/instructors/me received for user '{UserId}'.", userId.Value);
-        var result = await _instructorService.UpdateCurrentInstructorAsync(userId.Value, dto, cancellationToken);
+        var result = await _instructorService.UpdateCurrentInstructorProfileAsync(userId.Value, dto, cancellationToken);
         return Ok(result);
     }
 
     /// <summary>
-    /// Retrieves an instructor by their unique ID.
+    /// Retrieves an instructor by their unique ID within the current organization.
+    /// Restricted to CenterAdmin (OrgAdmin) and SuperAdmin.
     /// </summary>
     [HttpGet("{id:guid}")]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<InstructorDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -111,11 +121,13 @@ public class InstructorsController : ControllerBase
 
     /// <summary>
     /// Creates a new instructor record for an existing user.
+    /// Restricted to CenterAdmin (OrgAdmin) and SuperAdmin.
     /// </summary>
     [HttpPost]
     [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
@@ -128,9 +140,10 @@ public class InstructorsController : ControllerBase
 
     /// <summary>
     /// Updates an existing instructor record.
+    /// Restricted to CenterAdmin (OrgAdmin) and SuperAdmin scoped to their organization.
     /// </summary>
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
@@ -139,20 +152,18 @@ public class InstructorsController : ControllerBase
     public async Task<ActionResult<InstructorDto>> Update(Guid id, [FromBody] UpdateInstructorDto dto, CancellationToken cancellationToken)
     {
         _logger.LogInformation("HTTP PUT api/instructors/{Id} received.", id);
-
-        var existing = await _instructorService.GetByIdAsync(id, cancellationToken);
-        _authorizationService.EnsureCanModifyInstructor(User, existing.UserId);
-
         var result = await _instructorService.UpdateAsync(id, dto, cancellationToken);
         return Ok(result);
     }
 
     /// <summary>
     /// Deletes an instructor if they have no active course groups or sessions.
+    /// Restricted to CenterAdmin (OrgAdmin) and SuperAdmin.
     /// </summary>
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
@@ -164,12 +175,14 @@ public class InstructorsController : ControllerBase
 
     /// <summary>
     /// Links an existing instructor to a user account within the same organization.
+    /// Restricted to CenterAdmin (OrgAdmin) and SuperAdmin.
     /// </summary>
     [HttpPut("{id:guid}/link-user")]
     [HttpPost("{id:guid}/link-user")]
     [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
@@ -185,10 +198,12 @@ public class InstructorsController : ControllerBase
 
     /// <summary>
     /// Retrieves the instructor profile linked to a specific user ID.
+    /// Restricted to CenterAdmin (OrgAdmin) and SuperAdmin.
     /// </summary>
     [HttpGet("user/{userId:guid}")]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(InstructorDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<InstructorDto>> GetByUserId(Guid userId, CancellationToken cancellationToken)
     {

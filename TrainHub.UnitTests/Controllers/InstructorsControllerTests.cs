@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
 using TrainHub.Api.Controllers;
-using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Instructors.DTOs;
 using TrainHub.Application.Interfaces;
 
@@ -118,7 +117,7 @@ public class InstructorsControllerTests
     }
 
     [Fact]
-    public async Task Update_WhenAuthorized_ReturnsOkResultWithUpdatedInstructor()
+    public async Task Update_WhenCalled_ReturnsOkResultWithUpdatedInstructor()
     {
         // Arrange
         var instructorId = Guid.NewGuid();
@@ -129,13 +128,6 @@ public class InstructorsControllerTests
             Bio = "Updated bio"
         };
 
-        var existingInstructor = new InstructorDto
-        {
-            Id = instructorId,
-            UserId = userId,
-            Specialization = "Old Specialization"
-        };
-
         var updatedInstructor = new InstructorDto
         {
             Id = instructorId,
@@ -144,8 +136,6 @@ public class InstructorsControllerTests
             Bio = updateDto.Bio
         };
 
-        _instructorServiceMock.Setup(s => s.GetByIdAsync(instructorId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingInstructor);
         _instructorServiceMock.Setup(s => s.UpdateAsync(instructorId, updateDto, It.IsAny<CancellationToken>()))
             .ReturnsAsync(updatedInstructor);
 
@@ -158,37 +148,7 @@ public class InstructorsControllerTests
         okResult!.StatusCode.Should().Be(200);
         okResult.Value.Should().BeEquivalentTo(updatedInstructor);
 
-        _authorizationServiceMock.Verify(a => a.EnsureCanModifyInstructor(It.IsAny<ClaimsPrincipal>(), userId), Times.Once);
-    }
-
-    [Fact]
-    public async Task Update_WhenForbidden_ThrowsForbiddenAccessException()
-    {
-        // Arrange
-        var instructorId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
-        var updateDto = new UpdateInstructorDto
-        {
-            Specialization = "Updated Specialization"
-        };
-
-        var existingInstructor = new InstructorDto
-        {
-            Id = instructorId,
-            UserId = userId
-        };
-
-        _instructorServiceMock.Setup(s => s.GetByIdAsync(instructorId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingInstructor);
-        _authorizationServiceMock.Setup(a => a.EnsureCanModifyInstructor(It.IsAny<ClaimsPrincipal>(), userId))
-            .Throws(new ForbiddenAccessException("You do not have permission to modify another instructor's profile."));
-
-        // Act
-        var act = () => _controller.Update(instructorId, updateDto, CancellationToken.None);
-
-        // Assert
-        await act.Should().ThrowAsync<ForbiddenAccessException>()
-            .WithMessage("You do not have permission to modify another instructor's profile.");
+        _instructorServiceMock.Verify(s => s.UpdateAsync(instructorId, updateDto, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -324,15 +284,16 @@ public class InstructorsControllerTests
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
         };
 
-        var updateDto = new UpdateInstructorDto { Specialization = "Advanced C#" };
+        var updateDto = new UpdateInstructorProfileDto { Bio = "Updated personal bio", PhoneNumber = "+1234567890" };
         var updatedInstructor = new InstructorDto
         {
             Id = Guid.NewGuid(),
             UserId = currentUserId,
-            Specialization = "Advanced C#"
+            Bio = updateDto.Bio,
+            PhoneNumber = updateDto.PhoneNumber
         };
 
-        _instructorServiceMock.Setup(s => s.UpdateCurrentInstructorAsync(currentUserId, updateDto, It.IsAny<CancellationToken>()))
+        _instructorServiceMock.Setup(s => s.UpdateCurrentInstructorProfileAsync(currentUserId, updateDto, It.IsAny<CancellationToken>()))
             .ReturnsAsync(updatedInstructor);
 
         // Act
@@ -354,7 +315,7 @@ public class InstructorsControllerTests
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
         };
 
-        var updateDto = new UpdateInstructorDto { Specialization = "Advanced C#" };
+        var updateDto = new UpdateInstructorProfileDto { Bio = "Updated personal bio" };
 
         // Act
         var result = await _controller.UpdateCurrentInstructor(updateDto, CancellationToken.None);
