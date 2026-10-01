@@ -1,22 +1,25 @@
 # Project Engineering & Business Instructions
 
-You are working on a real-world Training Center SaaS.
+This repository is BACKEND ONLY.
 
-Your responsibility is not only to produce working code, but to preserve:
+The backend is a real-world Training Center SaaS built with:
+- ASP.NET Core Web API
+- C#
+- Entity Framework Core
+- SQL Server
+- ASP.NET Core Identity
+- JWT Authentication
+- RESTful API
 
-1. The actual business model.
-2. The defined MVP scope.
-3. The existing architecture and design decisions.
-4. Security and tenant isolation.
-5. Simplicity and maintainability.
+Architecture:
+- Modular Monolith
+- Simple Clean Architecture
 
 ==================================================
+1. MVP SCOPE
+==================================================
 
-1. # MVP SCOPE — STRICT RULE
-
-The current goal is the MVP.
-
-The MVP core is:
+Current MVP:
 
 - Authentication
 - Organizations
@@ -30,167 +33,64 @@ The MVP core is:
 - Attendance
 - Basic Dashboard
 
-Do NOT add features outside the current MVP scope unless explicitly requested.
+Do not implement features outside the MVP unless explicitly requested.
 
-Do NOT add:
+Do not add:
+- Payments
+- Subscriptions
+- Notifications
+- Files
+- AI
+- Advanced Analytics
+- External Integrations
+- Extra Roles
+- Extra Permissions
+- Extra Entities
+- Extra Workflows
 
-- Extra modules
-- Extra workflows
-- Extra dashboards
-- Extra user roles
-- Extra permissions
-- Extra entities
-- Extra notifications
-- Extra integrations
-- Extra settings
-- Extra business rules
+Follow YAGNI.
 
-Do not implement functionality simply because it may be useful in the future.
-
-Future ideas must remain outside the implementation unless explicitly requested.
-
-Follow YAGNI:
-"You aren't gonna need it."
-
-================================================== 2. BUSINESS FIRST
+==================================================
+2. BUSINESS FIRST
 ==================================================
 
-The system must represent a real Training Center business.
-
-Do not design features as isolated technical CRUD operations.
+The system must model a real Training Center business.
 
 Every feature must have a real business purpose.
 
-Before implementing a feature, determine:
+Do not add functionality simply because:
+- it is technically possible
+- it may be useful later
+- it is common in other systems
 
-- What real business problem does it solve?
-- Which actor uses it?
-- Why does the actor need it?
-- What business rule governs it?
-- What is the minimum behavior required for the MVP?
+Core business workflow is more important than feature count.
 
-Do not invent business behavior just to make the system look more complete.
+Do not invent business rules that were not defined.
 
-Prefer:
-Core business workflow > number of features.
-
-A smaller system that correctly represents the business is better than a larger system full of unnecessary functionality.
-
-================================================== 3. DO NOT INVENT BUSINESS RULES
-==================================================
-
-Do not assume business rules that were not defined.
-
-Do not create:
-
-- automatic behaviors
-- permissions
-- statuses
-- calculations
-- workflows
-- restrictions
-- notifications
-- validations
-
-unless they are justified by the existing business requirements.
-
-When a technical implementation requires a business decision that is not defined:
-
+When a business decision is unclear:
 - keep the implementation minimal
 - preserve existing behavior
-- do not invent a new business rule
-- document the assumption when necessary
+- do not invent new behavior
 
-================================================== 4. SOLID PRINCIPLES
+==================================================
+3. ARCHITECTURE
 ==================================================
 
-Follow SOLID principles.
-
-Single Responsibility:
-Each class/module should have one clear responsibility.
-
-Open/Closed:
-Prefer extending behavior without modifying unrelated existing behavior.
-
-Liskov Substitution:
-Do not create abstractions that violate expected contracts.
-
-Interface Segregation:
-Prefer small focused interfaces over large generic interfaces.
-
-Dependency Inversion:
-High-level business logic must not depend directly on infrastructure details.
-
-Do not apply SOLID mechanically.
-
-Do NOT create abstractions simply to "follow SOLID."
-
-Use abstractions when they provide a real architectural or business benefit.
-
-================================================== 5. DESIGN PATTERNS
-==================================================
-
-Follow the architecture and design patterns already established in the project.
-
-Do not introduce a new design pattern unless:
-
-- it solves an actual problem
-- it fits the existing architecture
-- it reduces complexity rather than increasing it
-
-Do not use design patterns for demonstration purposes.
-
-Avoid pattern overuse.
-
-Examples:
-Do not create repositories, factories, strategies, mediators, handlers, managers, providers, or wrappers without a real reason.
-
-Prefer simple code when simple code is sufficient.
-
-================================================== 6. KISS / YAGNI / DRY
-==================================================
-
-Follow:
-
-- KISS
-- YAGNI
-- DRY
-
-However, do not force DRY too early.
-
-A small amount of duplication is acceptable when abstraction would make the code harder to understand.
-
-Avoid:
-
-- premature abstraction
-- speculative flexibility
-- over-engineering
-- unnecessary generic systems
-- unnecessary configuration
-- unnecessary helper layers
-
-The simplest solution that correctly satisfies the business requirement is preferred.
-
-================================================== 7. ARCHITECTURE
-==================================================
-
-The project uses a Modular Monolith with a simple Clean Architecture approach.
-
-Respect the existing separation:
+Respect the existing architecture:
 
 API
 Application
 Domain
 Infrastructure
 
-Controllers:
-
+API:
 - HTTP concerns only
-- No business logic
-- No database logic
+- Controllers
+- Authentication/Authorization configuration
+- Middleware
+- OpenAPI
 
 Application:
-
 - Use cases
 - Business workflows
 - DTOs
@@ -198,300 +98,413 @@ Application:
 - Interfaces
 
 Domain:
-
-- Core business concepts
 - Entities
 - Enums
-- Business rules
+- Core business rules
+- Domain invariants
 
 Infrastructure:
-
-- Database
 - EF Core
+- SQL Server
 - Identity
 - Authentication infrastructure
 - External services
 
-Do not bypass these boundaries without a strong reason.
+Do not bypass these boundaries without a real architectural reason.
 
-================================================== 8. MULTI-TENANCY
+Do not introduce Microservices.
+
+==================================================
+4. SOLID
+==================================================
+
+Follow SOLID principles.
+
+Apply SOLID pragmatically.
+
+Do not create abstractions just to satisfy SOLID.
+
+Prefer:
+- clear responsibilities
+- focused interfaces
+- dependency inversion
+- maintainable code
+
+Avoid unnecessary:
+- repositories
+- factories
+- strategies
+- managers
+- providers
+- wrappers
+- generic abstractions
+
+==================================================
+5. DESIGN PATTERNS
+==================================================
+
+Use the existing project patterns consistently.
+
+Introduce a new pattern only when:
+- it solves a real problem
+- it fits the existing architecture
+- it reduces complexity
+
+Do not use patterns for demonstration purposes.
+
+Prefer simple code when simple code is sufficient.
+
+==================================================
+6. KISS / YAGNI / DRY
+==================================================
+
+Follow:
+- KISS
+- YAGNI
+- DRY
+
+Avoid:
+- premature abstraction
+- speculative flexibility
+- over-engineering
+- unnecessary configuration
+- unnecessary layers
+- unnecessary generic systems
+
+A small amount of duplication is acceptable when abstraction would add complexity.
+
+==================================================
+7. MULTI-TENANCY
 ==================================================
 
 The system is multi-tenant.
 
-Each Organization is isolated from every other Organization.
+Every Training Center is an Organization.
+
+Organization data must remain isolated.
 
 Never allow cross-tenant access.
 
-Organization context must come from the authenticated user's current organization context.
+Organization context must come from the authenticated user / trusted server-side context.
 
-Do NOT trust OrganizationId supplied by the client for authorization.
+Never trust client-supplied OrganizationId for authorization.
 
 Every tenant-owned operation must verify:
-
-- current user
 - current organization
 - resource ownership
-- permission
+- authorization
 
-Never assume that because an entity ID exists, the current user can access it.
+All tenant queries must respect tenant isolation.
 
-Cross-tenant data access must be explicitly prevented.
+Cross-tenant reads, updates, deletes, and creates must be prevented.
 
-================================================== 9. AUTHORIZATION & ROLES
+==================================================
+8. USERS & ORGANIZATIONS
 ==================================================
 
-Follow the principle of least privilege.
+Every ApplicationUser must have a non-null OrganizationId.
 
-Do NOT create a role unless the real business requires it.
+The SaaS Platform has a dedicated Platform Organization.
 
-Do NOT create permissions merely because they might be useful later.
+SuperAdmin users belong to the Platform Organization.
 
-Do NOT give users broader permissions than required.
+Training Center users belong to their Training Center Organization.
 
-Every role must have:
+Current roles are only:
 
-- a real business purpose
-- clearly defined responsibilities
-- minimum required permissions
+- SuperAdmin
+- OrgAdmin
+- Instructor
+- Student
 
-Never solve a missing business requirement by creating a new role automatically.
+Do not create additional roles without an explicit business requirement.
 
-Prefer fewer roles with clear responsibilities.
+Roles must follow least privilege.
 
-Do not duplicate authorization logic throughout the codebase.
-
-Authorization must be centralized and consistent.
-
-================================================== 10. SECURITY
+==================================================
+9. AUTHORIZATION
 ==================================================
 
-Security is part of the feature, not an optional improvement.
+Authorization must represent real business responsibilities.
 
-For every protected operation consider:
+SuperAdmin:
+- Platform-level administration
+- Organization management
+- SaaS administration
 
+OrgAdmin:
+- Manage their Training Center
+
+Instructor:
+- Access instructor-specific functionality
+
+Student:
+- Access student-specific functionality
+
+Never grant broader permissions than required.
+
+Do not use roles as a substitute for resource ownership checks.
+
+Always combine:
+Authentication
++
+Authorization
++
+Organization isolation
++
+Resource ownership
+
+==================================================
+10. SECURITY
+==================================================
+
+Security is mandatory for every feature.
+
+Consider:
 - Authentication
 - Authorization
-- Organization isolation
+- Tenant isolation
 - Input validation
 - Resource ownership
-- Sensitive data exposure
 - Mass assignment
-- Insecure direct object references
+- IDOR
+- Sensitive data exposure
 - Overly permissive endpoints
 
-Never expose internal entities directly when a DTO is appropriate.
+Never trust client authorization data.
 
-Never trust client-provided authorization data.
-
-Do not expose:
-
-- passwords
-- password hashes
-- refresh tokens
-- security secrets
-- internal implementation details
-- sensitive tenant data
+Never expose:
+- Passwords
+- Password hashes
+- Refresh tokens
+- Secrets
+- Internal database details
+- Sensitive tenant data
+- Stack traces in production
 
 Use secure defaults.
 
-Default to deny rather than allow.
+Default to deny.
 
-================================================== 11. DATABASE
 ==================================================
+11. DATABASE
+==================================================
+
+Use SQL Server + EF Core.
 
 Design the database around real business relationships.
 
-Do not create a table because:
-
-- it "might be useful later"
-- it makes the architecture look more complete
-- it could support a future feature
-
-Every relationship must have a business reason.
-
 Use:
+- Primary keys
+- Foreign keys
+- Unique constraints
+- Appropriate indexes
+- Correct delete behaviors
 
-- primary keys
-- foreign keys
-- unique constraints
-- appropriate indexes
-- correct delete behavior
+Do not create tables or columns for hypothetical future features.
 
-Protect business integrity at the database and application levels where appropriate.
+Protect business integrity at both application and database levels where appropriate.
 
-================================================== 12. API DESIGN
+==================================================
+12. IDENTITY
+==================================================
+
+Use ASP.NET Core Identity for authentication and password security.
+
+Do not implement custom password hashing.
+
+Users belong to exactly one Organization.
+
+The same email may exist in multiple Organizations.
+
+Email uniqueness must be scoped to the Organization.
+
+Conceptually:
+
+UNIQUE(OrganizationId, NormalizedEmail)
+
+not globally:
+
+UNIQUE(NormalizedEmail)
+
+==================================================
+13. API DESIGN
 ==================================================
 
 APIs must represent real business operations.
 
-Do not create endpoints simply because CRUD is possible.
-
-Prefer meaningful resource-oriented REST APIs.
+Prefer resource-oriented REST APIs.
 
 Use:
-
-- correct HTTP methods
-- correct HTTP status codes
+- Correct HTTP methods
+- Correct HTTP status codes
 - DTOs
-- validation
-- pagination where needed
-- consistent error responses
+- Validation
+- Pagination where needed
+- Consistent error responses
+- OpenAPI documentation
 
-Do not expose internal implementation details through the API.
+Do not expose internal entities directly when DTOs are appropriate.
 
-================================================== 13. FRONTEND
+Do not create endpoints only because a CRUD endpoint is technically possible.
+
+==================================================
+14. VALIDATION
 ==================================================
 
-The frontend must represent the same business model as the backend.
+Validation should have clear responsibility.
 
-Do not add UI features that have no business requirement.
+Boundary validation:
+- DTO validation
+- Required fields
+- Format
+- Basic input constraints
 
-Do not add unnecessary:
+Domain validation:
+- Business invariants
 
-- filters
-- buttons
-- settings
-- dashboards
-- actions
-- forms
-- pages
+Application validation:
+- Database-dependent rules
+- Business relationships
+- Uniqueness
+- Resource existence
 
-Every visible action must have a clear business purpose.
+Do not duplicate the same rule unnecessarily across multiple layers.
 
-Do not create UI controls for backend functionality that is intentionally outside the MVP.
+Do not weaken domain invariants when removing duplicate validation.
 
-================================================== 14. FEATURE IMPLEMENTATION
+==================================================
+15. EXCEPTIONS & ERROR HANDLING
 ==================================================
 
-When implementing a feature:
+Use centralized exception handling.
+
+Return safe API errors.
+
+Do not expose:
+- SQL exception messages
+- Stack traces
+- Internal class names
+- Database schema details
+
+Log detailed diagnostics server-side.
+
+==================================================
+16. TESTING
+==================================================
+
+Tests must protect business behavior and security.
+
+Prioritize:
+- Authentication
+- Authorization
+- Tenant isolation
+- Business rules
+- Important API flows
+- Database integrity
+
+Do not keep tests for dead or removed code.
+
+Do not remove meaningful security or business coverage merely to reduce test count.
+
+==================================================
+17. FEATURE IMPLEMENTATION
+==================================================
+
+Before implementing a feature:
 
 1. Understand the business requirement.
 2. Inspect the existing architecture.
-3. Reuse existing patterns and conventions.
-4. Identify the minimum required behavior.
-5. Implement only that behavior.
-6. Add required validation and authorization.
+3. Reuse existing conventions.
+4. Implement the minimum required behavior.
+5. Add required validation.
+6. Add authorization.
 7. Preserve tenant isolation.
-8. Add tests for important business/security rules.
+8. Add appropriate tests.
 9. Avoid unrelated refactoring.
-10. Avoid unrelated features.
+10. Avoid future features.
 
-Do not use a feature request as an excuse to redesign unrelated parts of the system.
-
-================================================== 15. SCOPE CONTROL
+==================================================
+18. SCOPE CONTROL
 ==================================================
 
-Never expand scope silently.
+Never silently expand the MVP.
 
-If you discover a potentially useful feature while implementing another feature:
+If you discover a useful future feature:
+- Do not implement it.
+- Treat it as future backlog work.
 
-DO NOT implement it automatically.
+Do not turn one feature into a larger system.
 
-Treat it as a future backlog item instead.
-
-Examples:
-
-- Notifications
-- Audit logs
-- Advanced analytics
-- Payments
-- Subscriptions
-- File management
-- AI
-- Calendar integrations
-- External integrations
-
-These must remain out of the MVP unless explicitly requested.
-
-================================================== 16. REFACTORING
+==================================================
+19. REFACTORING
 ==================================================
 
-Refactoring is allowed only when it directly improves the current task or fixes a real architectural problem.
+Refactor only when:
+- fixing a real architectural problem
+- improving the current task
+- removing unnecessary complexity
 
-Do not perform large unrelated refactors.
+Do not perform unrelated refactoring.
 
-Do not rename or restructure large parts of the project without a clear reason.
+Do not restructure working code based only on personal preference.
 
-Avoid "cleaning up" working code merely according to personal preference.
-
-Preserve established project conventions unless they are clearly harmful.
-
-================================================== 17. AI-SPECIFIC RULE
+==================================================
+20. DEFINITION OF DONE
 ==================================================
 
-Do not generate unnecessary complexity just because you are capable of generating it.
+A backend feature is Done when:
 
-Do not optimize for:
+- The real business requirement is satisfied.
+- MVP scope is respected.
+- API behavior is correct.
+- Authorization is correct.
+- Tenant isolation is preserved.
+- Validation is appropriate.
+- Database integrity is preserved.
+- Important tests pass.
+- Existing architecture is respected.
+- No unnecessary role or feature was added.
+- No unrelated behavior was changed.
 
-- number of files
-- number of classes
-- number of patterns
-- number of abstractions
-- number of features
+==================================================
+21. AI RULE
+==================================================
+
+Do not generate complexity simply because it is possible.
 
 Optimize for:
 
-- correctness
-- business value
-- security
-- maintainability
-- simplicity
+- Business correctness
+- Security
+- Maintainability
+- Simplicity
+- Correct architecture
 
-Do not confuse "more code" with "better software."
+Do not optimize for:
 
-================================================== 18. DEFINITION OF DONE
+- Number of files
+- Number of classes
+- Number of abstractions
+- Number of design patterns
+- Number of features
+
+More code does not mean better software.
+
+==================================================
+22. CORE PRINCIPLE
 ==================================================
 
-A feature is not complete simply because the code compiles.
+Build the smallest backend that correctly solves the real business problem.
 
-A feature is Done when:
+Business correctness > feature count
 
-- Business requirement is satisfied.
-- MVP scope is respected.
-- Authorization is correct.
-- Tenant isolation is preserved.
-- Validation exists where required.
-- Database integrity is preserved.
-- Important business/security rules are tested.
-- Existing architecture is respected.
-- No unnecessary feature was added.
-- No unrelated behavior was changed.
+Security > convenience
 
-================================================== 19. FINAL CHECK BEFORE COMPLETING ANY TASK
-==================================================
+Clarity > abstraction
 
-Before finishing any task, verify:
+Simplicity > cleverness
 
-[ ] Does this solve a real business requirement?
-[ ] Is this inside the current MVP scope?
-[ ] Did I add anything that was not requested?
-[ ] Did I create any unnecessary role or permission?
-[ ] Did I introduce unnecessary abstraction?
-[ ] Did I introduce a design pattern without a real need?
-[ ] Is tenant isolation preserved?
-[ ] Is authorization least-privilege?
-[ ] Could this be implemented more simply?
-[ ] Did I accidentally implement a future feature?
-[ ] Did I modify unrelated parts of the system?
-
-If any unnecessary functionality was added, remove it before finishing.
-
-================================================== 20. CORE PRINCIPLE
-==================================================
-
-Build the smallest system that correctly solves the real business problem.
-
-Business correctness > feature count.
-
-Security > convenience.
-
-Clarity > abstraction.
-
-Simplicity > cleverness.
-
-MVP scope > future possibilities.
+MVP scope > future possibilities
 
 Do not build for hypothetical requirements.
-
-Do not add functionality just because it is technically possible.
