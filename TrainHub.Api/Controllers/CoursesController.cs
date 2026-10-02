@@ -42,6 +42,19 @@ public class CoursesController : ControllerBase
     }
 
     /// <summary>
+    /// Retrieves distinct course categories for the current organization.
+    /// </summary>
+    [HttpGet("categories")]
+    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<string>>> GetCategories(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP GET api/courses/categories received.");
+        var result = await _courseService.GetCategoriesAsync(cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Retrieves a course by its unique ID.
     /// </summary>
     [HttpGet("{id:guid}")]
@@ -86,6 +99,25 @@ public class CoursesController : ControllerBase
     {
         _logger.LogInformation("HTTP PUT api/courses/{Id} received.", id);
         var result = await _courseService.UpdateAsync(id, dto, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Updates the status of an existing course.
+    /// </summary>
+    [HttpPatch("{id:guid}/status")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
+    [ProducesResponseType(typeof(CourseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<CourseDto>> UpdateStatus(
+        Guid id,
+        [FromBody] UpdateCourseStatusDto dto,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP PATCH api/courses/{Id}/status received with status '{Status}'.", id, dto.Status);
+        var result = await _courseService.UpdateStatusAsync(id, dto, cancellationToken);
         return Ok(result);
     }
 

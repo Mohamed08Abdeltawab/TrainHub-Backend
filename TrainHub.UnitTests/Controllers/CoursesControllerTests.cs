@@ -164,4 +164,49 @@ public class CoursesControllerTests
 
         _courseServiceMock.Verify(s => s.DeleteAsync(courseId, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task GetCategories_ReturnsOkResultWithListOfCategories()
+    {
+        // Arrange
+        var categories = new List<string> { "DevOps", "Programming" };
+        _courseServiceMock.Setup(s => s.GetCategoriesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(categories);
+
+        // Act
+        var result = await _controller.GetCategories(CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(categories);
+    }
+
+    [Fact]
+    public async Task UpdateStatus_ReturnsOkResultWithUpdatedCourse()
+    {
+        // Arrange
+        var courseId = Guid.NewGuid();
+        var dto = new UpdateCourseStatusDto { Status = CourseConstants.Statuses.Archived };
+        var updatedCourse = new CourseDto
+        {
+            Id = courseId,
+            Name = "Clean Code",
+            Status = CourseConstants.Statuses.Archived,
+            StatusName = "Archived"
+        };
+
+        _courseServiceMock.Setup(s => s.UpdateStatusAsync(courseId, dto, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(updatedCourse);
+
+        // Act
+        var result = await _controller.UpdateStatus(courseId, dto, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(updatedCourse);
+    }
 }

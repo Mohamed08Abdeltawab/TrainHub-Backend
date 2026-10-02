@@ -24,27 +24,22 @@ public static class CourseConstants
     public const int SearchTermMaxLength = 100;
 
     /// <summary>
-    /// Course status constants.
+    /// Course status constants aligned with <see cref="TrainHub.Domain.Enums.CourseStatus"/>.
     /// </summary>
     public static class Statuses
     {
-        public const byte Draft = 0;
-        public const byte Active = 1;
-        public const byte Inactive = 2;
-        public const byte Archived = 3;
+        public const byte Draft = (byte)TrainHub.Domain.Enums.CourseStatus.Draft;
+        public const byte Active = (byte)TrainHub.Domain.Enums.CourseStatus.Active;
+        public const byte Inactive = (byte)TrainHub.Domain.Enums.CourseStatus.Inactive;
+        public const byte Archived = (byte)TrainHub.Domain.Enums.CourseStatus.Archived;
 
         public static readonly IReadOnlyList<byte> All = [Draft, Active, Inactive, Archived];
 
-        public static bool IsValid(byte status) => All.Contains(status);
+        public static bool IsValid(byte status) => Enum.IsDefined(typeof(TrainHub.Domain.Enums.CourseStatus), status);
 
-        public static string GetName(byte status) => status switch
-        {
-            Draft => "Draft",
-            Active => "Active",
-            Inactive => "Inactive",
-            Archived => "Archived",
-            _ => "Unknown"
-        };
+        public static string GetName(byte status) => IsValid(status)
+            ? ((TrainHub.Domain.Enums.CourseStatus)status).ToString()
+            : "Unknown";
     }
 
     public static readonly IReadOnlyList<string> AllowedSortFields =

@@ -4,6 +4,7 @@ using Moq;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Courses.DTOs;
 using TrainHub.Domain.Constants;
+using TrainHub.Domain.Enums;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure.Data;
 using TrainHub.Application.Services;
@@ -131,6 +132,24 @@ public class CourseValidatorTests : IDisposable
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task ValidateCreateAsync_WhenStatusIsInvalid_ThrowsValidationException()
+    {
+        // Arrange
+        var dto = new CreateCourseDto
+        {
+            Name = "Clean Architecture 101",
+            Status = 99
+        };
+
+        // Act
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ValidationException>()
+            .Where(ex => ex.Errors.ContainsKey(nameof(dto.Status)));
+    }
+
     #endregion
 
     #region ValidateUpdateAsync
@@ -211,6 +230,81 @@ public class CourseValidatorTests : IDisposable
         // Assert
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*already exists in this organization*");
+    }
+
+    [Fact]
+    public async Task ValidateUpdateAsync_WhenStatusIsInvalid_ThrowsValidationException()
+    {
+        // Arrange
+        var course = Course.Create(_organizationId, "Original Name");
+        _dbContext.Courses.Add(course);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new UpdateCourseDto
+        {
+            Name = "Original Name",
+            Status = 99
+        };
+
+        // Act
+        var act = () => _validator.ValidateUpdateAsync(course.Id, dto, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ValidationException>()
+            .Where(ex => ex.Errors.ContainsKey(nameof(dto.Status)));
+    }
+
+    #endregion
+
+    #region ValidateUpdateStatusAsync
+
+    [Fact]
+    public async Task ValidateUpdateStatusAsync_WithValidStatus_Succeeds()
+    {
+        // Arrange
+        var course = Course.Create(_organizationId, "Valid Course");
+        _dbContext.Courses.Add(course);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new UpdateCourseStatusDto { Status = (byte)CourseStatus.Inactive };
+
+        // Act
+        var act = () => _validator.ValidateUpdateStatusAsync(course.Id, dto.Status, CancellationToken.None);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ValidateUpdateStatusAsync_WhenCourseNotFound_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new UpdateCourseStatusDto { Status = (byte)CourseStatus.Active };
+
+        // Act
+        var act = () => _validator.ValidateUpdateStatusAsync(Guid.NewGuid(), dto.Status, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Course*");
+    }
+
+    [Fact]
+    public async Task ValidateUpdateStatusAsync_WhenStatusIsInvalid_ThrowsValidationException()
+    {
+        // Arrange
+        var course = Course.Create(_organizationId, "Valid Course");
+        _dbContext.Courses.Add(course);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new UpdateCourseStatusDto { Status = 99 };
+
+        // Act
+        var act = () => _validator.ValidateUpdateStatusAsync(course.Id, dto.Status, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ValidationException>()
+            .Where(ex => ex.Errors.ContainsKey("status"));
     }
 
     #endregion

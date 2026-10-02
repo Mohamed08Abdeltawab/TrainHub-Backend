@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using TrainHub.Domain.Constants;
+using TrainHub.Domain.Enums;
 
 namespace TrainHub.Domain.Models;
 
@@ -25,6 +26,8 @@ public partial class Course
     public string? ThumbnailUrl { get; private set; }
 
     public byte Status { get; private set; }
+
+    public CourseStatus CourseStatus => (CourseStatus)Status;
 
     public DateTime CreatedAt { get; private set; }
 
@@ -129,6 +132,11 @@ public partial class Course
         Status = newStatus;
         UpdatedAt = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Updates the course status using the strongly-typed <see cref="CourseStatus"/> enum.
+    /// </summary>
+    public void UpdateStatus(CourseStatus newStatus) => UpdateStatus((byte)newStatus);
 
     /// <summary>
     /// Activates the course, making it available for group scheduling.

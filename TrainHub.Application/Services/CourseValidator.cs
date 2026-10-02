@@ -98,6 +98,13 @@ public class CourseValidator : ICourseValidator
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        if (!CourseConstants.IsValidStatus(dto.Status))
+        {
+            _logger.LogWarning("Validation failed: Invalid course status '{Status}'.", dto.Status);
+            throw new ValidationException(nameof(dto.Status),
+                $"Invalid course status '{dto.Status}'. Allowed values are: {string.Join(", ", CourseConstants.Statuses.All)}.");
+        }
+
         // 1. Verify Organization exists
         var orgExists = await _dbContext.Organizations
             .IgnoreQueryFilters()
@@ -127,6 +134,13 @@ public class CourseValidator : ICourseValidator
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        if (!CourseConstants.IsValidStatus(dto.Status))
+        {
+            _logger.LogWarning("Validation failed: Invalid course status '{Status}'.", dto.Status);
+            throw new ValidationException(nameof(dto.Status),
+                $"Invalid course status '{dto.Status}'. Allowed values are: {string.Join(", ", CourseConstants.Statuses.All)}.");
+        }
+
         // 1. Verify Course exists
         var course = await _dbContext.Courses
             .IgnoreQueryFilters()
@@ -149,6 +163,26 @@ public class CourseValidator : ICourseValidator
             _logger.LogWarning("Validation failed: Course name '{CourseName}' is already used by another course in organization '{OrganizationId}'.",
                 trimmedName, organizationId);
             throw new ConflictException($"A course named '{trimmedName}' already exists in this organization.");
+        }
+    }
+
+    public async Task ValidateUpdateStatusAsync(Guid id, byte status, CancellationToken cancellationToken = default)
+    {
+        if (!CourseConstants.IsValidStatus(status))
+        {
+            _logger.LogWarning("Validation failed: Invalid course status '{Status}'.", status);
+            throw new ValidationException(nameof(status),
+                $"Invalid course status '{status}'. Allowed values are: {string.Join(", ", CourseConstants.Statuses.All)}.");
+        }
+
+        var course = await _dbContext.Courses
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+
+        if (course == null)
+        {
+            _logger.LogWarning("Validation failed: Course '{CourseId}' was not found for status update.", id);
+            throw new NotFoundException("Course", id);
         }
     }
 

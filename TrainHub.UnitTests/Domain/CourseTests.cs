@@ -1,5 +1,6 @@
 using FluentAssertions;
 using TrainHub.Domain.Constants;
+using TrainHub.Domain.Enums;
 using TrainHub.Domain.Models;
 
 namespace TrainHub.UnitTests.Domain;
@@ -330,5 +331,35 @@ public class CourseTests
 
         course.Archive();
         course.Status.Should().Be(CourseConstants.Statuses.Archived);
+    }
+
+    [Fact]
+    public void CourseStatus_Property_ReflectsByteStatus()
+    {
+        // Arrange
+        var course = Course.Create(_validOrgId, ValidName, status: (byte)CourseStatus.Draft);
+
+        // Assert
+        course.CourseStatus.Should().Be(CourseStatus.Draft);
+
+        // Act
+        course.Activate();
+
+        // Assert
+        course.CourseStatus.Should().Be(CourseStatus.Active);
+    }
+
+    [Fact]
+    public void UpdateStatus_WithEnumOverload_UpdatesStatusCorrectly()
+    {
+        // Arrange
+        var course = Course.Create(_validOrgId, ValidName, status: (byte)CourseStatus.Draft);
+
+        // Act
+        course.UpdateStatus(CourseStatus.Archived);
+
+        // Assert
+        course.Status.Should().Be((byte)CourseStatus.Archived);
+        course.CourseStatus.Should().Be(CourseStatus.Archived);
     }
 }

@@ -5,6 +5,7 @@ using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Courses.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
+using TrainHub.Domain.Enums;
 using TrainHub.Domain.Models;
 using TrainHub.Infrastructure;
 using TrainHub.Infrastructure.Data;
@@ -388,6 +389,82 @@ public class CourseServiceTests : IDisposable
     {
         // Act
         var act = () => _service.DeleteAsync(Guid.NewGuid());
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Course*");
+    }
+
+    #endregion
+
+    #region GetCategoriesAsync
+
+    [Fact]
+    public async Task GetCategoriesAsync_ReturnsDistinctSortedCategories()
+    {
+        // Arrange
+        var c1 = Course.Create(_organizationId, "C# Course", category: "Programming");
+        var c2 = Course.Create(_organizationId, "Java Course", category: "Programming");
+        var c3 = Course.Create(_organizationId, "DevOps Course", category: "DevOps");
+        var c4 = Course.Create(_organizationId, "No Category Course", category: null);
+        _dbContext.Courses.AddRange(c1, c2, c3, c4);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetCategoriesAsync();
+
+        // Assert
+        result.Should().HaveCount(2);
+        result.Should().ContainInOrder("DevOps", "Programming");
+    }
+
+    #endregion
+
+    #region UpdateStatusAsync
+
+    [Fact]
+    public async Task UpdateStatusAsync_ValidDto_UpdatesStatusAndReturnsUpdatedDto()
+    {
+        // Arrange
+        var course = Course.Create(_organizationId, "Active Course", status: (byte)CourseStatus.Active);
+        _dbContext.Courses.Add(course);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new UpdateCourseStatusDto { Status = (byte)CourseStatus.Archived };
+
+        // Act
+        var result = await _service.UpdateStatusAsync(course.Id, dto);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Id.Should().Be(course.Id);
+        result.Status.Should().Be((byte)CourseStatus.Archived);
+        result.StatusName.Should().Be("Archived");
+
+        var updatedInDb = await _dbContext.Courses.FindAsync(course.Id);
+        updatedInDb!.Status.Should().Be((byte)CourseStatus.Archived);
+
+        _courseValidatorMock.Verify(v => v.ValidateUpdateStatusAsync(course.Id, dto.Status, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_NullDto_ThrowsArgumentNullException()
+    {
+        // Act
+        var act = () => _service.UpdateStatusAsync(Guid.NewGuid(), null!);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_NonExistentCourse_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new UpdateCourseStatusDto { Status = (byte)CourseStatus.Active };
+
+        // Act
+        var act = () => _service.UpdateStatusAsync(Guid.NewGuid(), dto);
 
         // Assert
         await act.Should().ThrowAsync<NotFoundException>()

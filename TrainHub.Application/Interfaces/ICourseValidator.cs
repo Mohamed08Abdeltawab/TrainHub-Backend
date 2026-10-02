@@ -18,6 +18,11 @@ public interface ICourseValidator
     Task ValidateUpdateAsync(Guid id, UpdateCourseDto dto, Guid organizationId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Validates business rules before updating a course's status (e.g., existence, validity of status).
+    /// </summary>
+    Task ValidateUpdateStatusAsync(Guid id, byte status, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validates business rules before deleting a course (e.g., existence, ensuring no dependent course groups exist).
     /// </summary>
     Task ValidateDeleteAsync(Guid id, CancellationToken cancellationToken = default);

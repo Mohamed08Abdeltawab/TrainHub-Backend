@@ -16,7 +16,8 @@ public class UpdateCourseDto
     [MaxLength(CourseConstants.DescriptionMaxLength, ErrorMessage = "Description cannot exceed 4000 characters.")]
     public string? Description { get; set; }
 
-    [MaxLength(CourseConstants.CategoryMaxLength, ErrorMessage = "Category cannot exceed 100 characters.")]
+    [StringLength(CourseConstants.CategoryMaxLength, MinimumLength = CourseConstants.CategoryMinLength,
+        ErrorMessage = "Category must be between 2 and 100 characters.")]
     public string? Category { get; set; }
 
     [Range((double)CourseConstants.MinBasePrice, (double)CourseConstants.MaxBasePrice,
@@ -31,5 +32,6 @@ public class UpdateCourseDto
     [Url(ErrorMessage = "Thumbnail URL must be a valid URL.")]
     public string? ThumbnailUrl { get; set; }
 
+    [Range(0, 3, ErrorMessage = "Status must be a valid course status (0 = Draft, 1 = Active, 2 = Inactive, 3 = Archived).")]
     public byte Status { get; set; } = CourseConstants.Statuses.Active;
 }

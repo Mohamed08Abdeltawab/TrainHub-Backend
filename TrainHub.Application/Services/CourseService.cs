@@ -99,13 +99,13 @@ public class CourseService : ICourseService
         var isDescending = parameters.SortDescending;
         query = (parameters.SortBy?.Trim().ToLowerInvariant()) switch
         {
-            "name" => isDescending ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
-            "category" => isDescending ? query.OrderByDescending(c => c.Category) : query.OrderBy(c => c.Category),
-            "baseprice" => isDescending ? query.OrderByDescending(c => c.BasePrice) : query.OrderBy(c => c.BasePrice),
-            "durationinhours" => isDescending ? query.OrderByDescending(c => c.DurationInHours) : query.OrderBy(c => c.DurationInHours),
-            "status" => isDescending ? query.OrderByDescending(c => c.Status) : query.OrderBy(c => c.Status),
-            "updatedat" => isDescending ? query.OrderByDescending(c => c.UpdatedAt) : query.OrderBy(c => c.UpdatedAt),
-            _ => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt)
+            "name" => isDescending ? query.OrderByDescending(c => c.Name).ThenBy(c => c.Id) : query.OrderBy(c => c.Name).ThenBy(c => c.Id),
+            "category" => isDescending ? query.OrderByDescending(c => c.Category).ThenBy(c => c.Id) : query.OrderBy(c => c.Category).ThenBy(c => c.Id),
+            "baseprice" => isDescending ? query.OrderByDescending(c => c.BasePrice).ThenBy(c => c.Id) : query.OrderBy(c => c.BasePrice).ThenBy(c => c.Id),
+            "durationinhours" => isDescending ? query.OrderByDescending(c => c.DurationInHours).ThenBy(c => c.Id) : query.OrderBy(c => c.DurationInHours).ThenBy(c => c.Id),
+            "status" => isDescending ? query.OrderByDescending(c => c.Status).ThenBy(c => c.Id) : query.OrderBy(c => c.Status).ThenBy(c => c.Id),
+            "updatedat" => isDescending ? query.OrderByDescending(c => c.UpdatedAt).ThenBy(c => c.Id) : query.OrderBy(c => c.UpdatedAt).ThenBy(c => c.Id),
+            _ => isDescending ? query.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id) : query.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id)
         };
 
         // 10. Pagination
@@ -148,6 +148,19 @@ public class CourseService : ICourseService
             .ToListAsync(cancellationToken);
 
         return courses.Select(MapToDto).ToList();
+    }
+
+    public async Task<IReadOnlyList<string>> GetCategoriesAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving distinct course categories within current tenant scope.");
+
+        return await _dbContext.Courses
+            .AsNoTracking()
+            .Where(c => c.Category != null && c.Category != "")
+            .Select(c => c.Category!)
+            .Distinct()
+            .OrderBy(c => c)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<CourseDto> CreateAsync(CreateCourseDto dto, CancellationToken cancellationToken = default)
@@ -217,6 +230,34 @@ public class CourseService : ICourseService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Course '{CourseId}' updated successfully.", id);
+
+        return MapToDto(course);
+    }
+
+    public async Task<CourseDto> UpdateStatusAsync(Guid id, UpdateCourseStatusDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        _logger.LogInformation("Updating status of course '{CourseId}' to '{Status}'.", id, dto.Status);
+
+        var course = await _dbContext.Courses
+            .Include(c => c.CourseGroups)
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+
+        if (course == null)
+        {
+            _logger.LogWarning("Course '{CourseId}' was not found for status update.", id);
+            throw new NotFoundException("Course", id);
+        }
+
+        await _courseValidator.ValidateUpdateStatusAsync(id, dto.Status, cancellationToken);
+
+        course.UpdateStatus(dto.Status);
+
+        _dbContext.Courses.Update(course);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Course '{CourseId}' status updated successfully to '{Status}'.", id, dto.Status);
 
         return MapToDto(course);
     }
