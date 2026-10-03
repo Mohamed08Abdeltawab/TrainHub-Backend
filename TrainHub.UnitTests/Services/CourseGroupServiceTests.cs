@@ -567,26 +567,8 @@ public class CourseGroupServiceTests : IDisposable
         var student = Student.Create(studentUser.Id, _organizationId, "STU-001");
         _dbContext.Students.Add(student);
 
-        var enrollment1 = new Enrollment
-        {
-            Id = Guid.NewGuid(),
-            OrganizationId = _organizationId,
-            CourseGroupId = group.Id,
-            StudentId = student.Id,
-            EnrollmentDate = DateTime.UtcNow,
-            PaidAmount = 100,
-            Status = 1
-        };
-        var enrollment2 = new Enrollment
-        {
-            Id = Guid.NewGuid(),
-            OrganizationId = _organizationId,
-            CourseGroupId = group.Id,
-            StudentId = student.Id,
-            EnrollmentDate = DateTime.UtcNow,
-            PaidAmount = 100,
-            Status = 1
-        };
+        var enrollment1 = Enrollment.Create(_organizationId, group.Id, student.Id, paidAmount: 100, status: 1);
+        var enrollment2 = Enrollment.Create(_organizationId, group.Id, student.Id, paidAmount: 100, status: 1);
         _dbContext.Enrollments.AddRange(enrollment1, enrollment2);
         await _dbContext.SaveChangesAsync();
 

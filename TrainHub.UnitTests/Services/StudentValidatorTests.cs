@@ -195,13 +195,7 @@ public class StudentValidatorTests : IDisposable
         var student = Student.Create(user.Id, _organizationId, "STU-ENROLLED");
         await _dbContext.Students.AddAsync(student);
 
-        var enrollment = new Enrollment
-        {
-            Id = Guid.NewGuid(),
-            OrganizationId = _organizationId,
-            CourseGroupId = Guid.NewGuid(),
-            StudentId = student.Id
-        };
+        var enrollment = Enrollment.Create(_organizationId, Guid.NewGuid(), student.Id);
         await _dbContext.Enrollments.AddAsync(enrollment);
         await _dbContext.SaveChangesAsync();
 

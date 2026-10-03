@@ -441,14 +441,7 @@ public class CourseGroupValidatorTests : IDisposable
         var group = CourseGroup.Create(_organizationId, _course.Id, "Group with Enrollments", new DateOnly(2026, 10, 1), new DateOnly(2026, 12, 1));
         _dbContext.CourseGroups.Add(group);
 
-        var enrollment = new Enrollment
-        {
-            Id = Guid.NewGuid(),
-            OrganizationId = _organizationId,
-            CourseGroupId = group.Id,
-            StudentId = Guid.NewGuid(),
-            PaidAmount = 100m
-        };
+        var enrollment = Enrollment.Create(_organizationId, group.Id, Guid.NewGuid(), paidAmount: 100m);
         _dbContext.Enrollments.Add(enrollment);
         await _dbContext.SaveChangesAsync();
 
@@ -784,13 +777,7 @@ public class CourseGroupValidatorTests : IDisposable
         // Add 10 enrollments
         for (int i = 0; i < 10; i++)
         {
-            _dbContext.Enrollments.Add(new Enrollment
-            {
-                Id = Guid.NewGuid(),
-                OrganizationId = _organizationId,
-                CourseGroupId = group.Id,
-                StudentId = Guid.NewGuid()
-            });
+            _dbContext.Enrollments.Add(Enrollment.Create(_organizationId, group.Id, Guid.NewGuid()));
         }
         await _dbContext.SaveChangesAsync();
 
@@ -962,13 +949,7 @@ public class CourseGroupValidatorTests : IDisposable
 
         for (int i = 0; i < 8; i++)
         {
-            _dbContext.Enrollments.Add(new Enrollment
-            {
-                Id = Guid.NewGuid(),
-                OrganizationId = _organizationId,
-                CourseGroupId = group.Id,
-                StudentId = Guid.NewGuid()
-            });
+            _dbContext.Enrollments.Add(Enrollment.Create(_organizationId, group.Id, Guid.NewGuid()));
         }
         await _dbContext.SaveChangesAsync();
 
