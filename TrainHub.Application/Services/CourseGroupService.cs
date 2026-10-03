@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Common.Models;
 using TrainHub.Application.Features.CourseGroups.DTOs;
+using TrainHub.Application.Features.Students.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
@@ -377,6 +378,86 @@ public class CourseGroupService : ICourseGroupService
             StatusName = CourseGroupConstants.Statuses.GetName(group.Status),
             CreatedAt = group.CreatedAt,
             UpdatedAt = group.UpdatedAt
+        };
+    }
+
+    public Task<IReadOnlyList<StudentDto>> GetStudentsAsync(Guid id, CancellationToken cancellationToken = default) =>
+        GetStudentsAsync(id, null, cancellationToken);
+
+    public async Task<IReadOnlyList<StudentDto>> GetStudentsAsync(Guid id, byte? status, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving enrolled students for course group '{CourseGroupId}'.", id);
+
+        var organizationId = _currentOrganizationService.OrganizationId;
+        if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
+        {
+            _logger.LogWarning("Cannot retrieve course group students: Organization ID could not be determined from current context.");
+            throw new BadRequestException("Organization context is required.");
+        }
+
+        // Verify CourseGroup exists and belongs to the current organization (preserves tenant isolation)
+        var groupExists = await _dbContext.CourseGroups
+            .IgnoreQueryFilters()
+            .AnyAsync(cg => cg.Id == id && cg.OrganizationId == organizationId.Value, cancellationToken);
+
+        if (!groupExists)
+        {
+            _logger.LogWarning("Course group '{CourseGroupId}' was not found in organization '{OrganizationId}'.", id, organizationId.Value);
+            throw new NotFoundException("CourseGroup", id);
+        }
+
+        // Query enrollments for this group within the organization
+        var query = _dbContext.Enrollments
+            .AsNoTracking()
+            .Where(e => e.CourseGroupId == id && e.OrganizationId == organizationId.Value);
+
+        if (status.HasValue)
+        {
+            query = query.Where(e => e.Status == status.Value);
+        }
+        else
+        {
+            query = query.Where(e => e.Status != EnrollmentConstants.Statuses.Cancelled);
+        }
+
+        var enrollments = await query
+            .Include(e => e.Student)
+                .ThenInclude(s => s.User)
+            .OrderBy(e => e.Student.User.LastName)
+            .ThenBy(e => e.Student.User.FirstName)
+            .ThenBy(e => e.Student.Id)
+            .ToListAsync(cancellationToken);
+
+        var studentDtos = enrollments
+            .Select(e => MapStudentToDto(e.Student))
+            .ToList();
+
+        _logger.LogInformation("Retrieved {Count} enrolled student(s) for course group '{CourseGroupId}'.", studentDtos.Count, id);
+
+        return studentDtos;
+    }
+
+    private static StudentDto MapStudentToDto(Student student)
+    {
+        var user = student.User;
+
+        return new StudentDto
+        {
+            Id = student.Id,
+            UserId = student.UserId,
+            OrganizationId = student.OrganizationId,
+            StudentCode = student.StudentCode,
+            GuardianPhone = student.GuardianPhone,
+            AcademicYear = student.AcademicYear,
+            DateOfBirth = student.DateOfBirth,
+            Age = student.CalculateAge(),
+            Notes = student.Notes,
+            CreatedAt = student.CreatedAt,
+            UpdatedAt = student.UpdatedAt,
+            FirstName = user?.FirstName,
+            LastName = user?.LastName,
+            Email = user?.Email,
+            PhoneNumber = user?.PhoneNumber
         };
     }
 }

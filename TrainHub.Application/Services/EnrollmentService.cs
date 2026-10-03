@@ -137,7 +137,15 @@ public class EnrollmentService : IEnrollmentService
             dto.EnrollmentDate);
 
         _dbContext.Enrollments.Add(enrollment);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "Failed to create enrollment due to database conflict (duplicate enrollment constraint).");
+            throw new ConflictException("Student is already enrolled in this course group.");
+        }
 
         _logger.LogInformation("Enrollment '{EnrollmentId}' created successfully.", enrollment.Id);
 

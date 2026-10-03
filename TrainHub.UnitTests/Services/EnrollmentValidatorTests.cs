@@ -414,4 +414,63 @@ public class EnrollmentValidatorTests : IDisposable
     }
 
     #endregion
+
+    #region Duplicate & Capacity
+
+    [Fact]
+    public async Task ValidateCreateAsync_StudentEnrolledInDifferentGroup_DoesNotThrow()
+    {
+        // Arrange - Enroll in group 1
+        _dbContext.Enrollments.Add(Enrollment.Create(_organizationId, _courseGroup.Id, _student.Id));
+
+        // Create a different group
+        var otherGroup = CourseGroup.Create(
+            _organizationId,
+            _courseGroup.CourseId,
+            "Group B",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1));
+        _dbContext.CourseGroups.Add(otherGroup);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new CreateEnrollmentDto
+        {
+            CourseGroupId = otherGroup.Id,
+            StudentId = _student.Id
+        };
+
+        // Act - Enroll same student in group B
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, CancellationToken.None);
+
+        // Assert - Should succeed
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ValidateCreateAsync_CancelledEnrollmentDoesNotConsumeCapacity_AllowsNewEnrollment()
+    {
+        // Arrange - Capacity is 2
+        var s2 = Student.Create(Guid.NewGuid(), _organizationId, "STU-002");
+        var s3 = Student.Create(Guid.NewGuid(), _organizationId, "STU-003");
+        _dbContext.Students.AddRange(s2, s3);
+
+        // One active, one cancelled enrollment
+        _dbContext.Enrollments.Add(Enrollment.Create(_organizationId, _courseGroup.Id, s2.Id, status: EnrollmentConstants.Statuses.Active));
+        _dbContext.Enrollments.Add(Enrollment.Create(_organizationId, _courseGroup.Id, s3.Id, status: EnrollmentConstants.Statuses.Cancelled));
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new CreateEnrollmentDto
+        {
+            CourseGroupId = _courseGroup.Id,
+            StudentId = _student.Id
+        };
+
+        // Act - Active count is 1 < 2, so should pass
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    #endregion
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TrainHub.Application.Common.Models;
 using TrainHub.Application.Features.CourseGroups.DTOs;
+using TrainHub.Application.Features.Students.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
 
@@ -188,5 +189,25 @@ public class CourseGroupsController : ControllerBase
         _logger.LogInformation("HTTP DELETE api/coursegroups/{Id} received.", id);
         await _courseGroupService.DeleteAsync(id, cancellationToken);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Retrieves all students enrolled in the specified course group within the current organization.
+    /// </summary>
+    [HttpGet("{id:guid}/students")]
+    [HttpGet("/api/courses/groups/{id:guid}/students")]
+    [HttpGet("/api/courses/{courseId:guid}/groups/{id:guid}/students")]
+    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [ProducesResponseType(typeof(IReadOnlyList<StudentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<StudentDto>>> GetStudents(
+        Guid id,
+        [FromQuery] byte? status,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP GET api/coursegroups/{Id}/students received.", id);
+        var result = await _courseGroupService.GetStudentsAsync(id, status, cancellationToken);
+        return Ok(result);
     }
 }

@@ -5,6 +5,7 @@ using Moq;
 using TrainHub.Api.Controllers;
 using TrainHub.Application.Common.Models;
 using TrainHub.Application.Features.CourseGroups.DTOs;
+using TrainHub.Application.Features.Students.DTOs;
 using TrainHub.Application.Interfaces;
 
 namespace TrainHub.UnitTests.Controllers;
@@ -266,5 +267,29 @@ public class CourseGroupsControllerTests
         okResult.Should().NotBeNull();
         okResult!.StatusCode.Should().Be(200);
         okResult.Value.Should().BeEquivalentTo(expectedGroup);
+    }
+
+    [Fact]
+    public async Task GetStudents_ReturnsOkResultWithStudents()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var expectedStudents = new List<StudentDto>
+        {
+            new() { Id = Guid.NewGuid(), StudentCode = "STU-001", FirstName = "John", LastName = "Doe" },
+            new() { Id = Guid.NewGuid(), StudentCode = "STU-002", FirstName = "Jane", LastName = "Smith" }
+        };
+
+        _courseGroupServiceMock.Setup(s => s.GetStudentsAsync(groupId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedStudents);
+
+        // Act
+        var result = await _controller.GetStudents(groupId, null, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(expectedStudents);
     }
 }

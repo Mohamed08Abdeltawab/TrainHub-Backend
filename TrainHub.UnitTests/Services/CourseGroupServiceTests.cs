@@ -616,4 +616,147 @@ public class CourseGroupServiceTests : IDisposable
     }
 
     #endregion
+
+    #region GetStudentsAsync
+
+    [Fact]
+    public async Task GetStudentsAsync_ExistingGroupWithEnrollments_ReturnsMappedStudentDtos()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_organizationId, _course.Id, "Batch Alpha", new DateOnly(2026, 10, 1), new DateOnly(2026, 12, 1));
+        _dbContext.CourseGroups.Add(group);
+
+        var user1 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Charlie", LastName = "Brown", Email = "charlie@test.com" };
+        var user2 = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Alice", LastName = "Smith", Email = "alice@test.com" };
+        _dbContext.ApplicationUsers.AddRange(user1, user2);
+
+        var student1 = Student.Create(user1.Id, _organizationId, "STU-001");
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-002");
+        _dbContext.Students.AddRange(student1, student2);
+
+        var e1 = Enrollment.Create(_organizationId, group.Id, student1.Id, status: EnrollmentConstants.Statuses.Active);
+        var e2 = Enrollment.Create(_organizationId, group.Id, student2.Id, status: EnrollmentConstants.Statuses.Active);
+        _dbContext.Enrollments.AddRange(e1, e2);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetStudentsAsync(group.Id, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Should().HaveCount(2);
+        result.Select(s => s.StudentCode).Should().Contain(["STU-001", "STU-002"]);
+        result.First(s => s.StudentCode == "STU-001").FirstName.Should().Be("Charlie");
+        result.First(s => s.StudentCode == "STU-002").FirstName.Should().Be("Alice");
+    }
+
+    [Fact]
+    public async Task GetStudentsAsync_WhenEnrollmentIsCancelled_ExcludesCancelledStudentByDefault()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_organizationId, _course.Id, "Batch Beta", new DateOnly(2026, 10, 1), new DateOnly(2026, 12, 1));
+        _dbContext.CourseGroups.Add(group);
+
+        var userActive = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Active", LastName = "User" };
+        var userCancelled = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Cancelled", LastName = "User" };
+        _dbContext.ApplicationUsers.AddRange(userActive, userCancelled);
+
+        var studentActive = Student.Create(userActive.Id, _organizationId, "STU-ACTIVE");
+        var studentCancelled = Student.Create(userCancelled.Id, _organizationId, "STU-CANCELLED");
+        _dbContext.Students.AddRange(studentActive, studentCancelled);
+
+        var eActive = Enrollment.Create(_organizationId, group.Id, studentActive.Id, status: EnrollmentConstants.Statuses.Active);
+        var eCancelled = Enrollment.Create(_organizationId, group.Id, studentCancelled.Id, status: EnrollmentConstants.Statuses.Cancelled);
+        _dbContext.Enrollments.AddRange(eActive, eCancelled);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetStudentsAsync(group.Id, CancellationToken.None);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result.Single().StudentCode.Should().Be("STU-ACTIVE");
+    }
+
+    [Fact]
+    public async Task GetStudentsAsync_WithSpecificStatusFilter_ReturnsOnlyMatchingStudents()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_organizationId, _course.Id, "Batch Gamma", new DateOnly(2026, 10, 1), new DateOnly(2026, 12, 1));
+        _dbContext.CourseGroups.Add(group);
+
+        var user = new ApplicationUser { Id = Guid.NewGuid(), OrganizationId = _organizationId, FirstName = "Completed", LastName = "Student" };
+        _dbContext.ApplicationUsers.Add(user);
+
+        var student = Student.Create(user.Id, _organizationId, "STU-COMP");
+        _dbContext.Students.Add(student);
+
+        var e = Enrollment.Create(_organizationId, group.Id, student.Id, status: EnrollmentConstants.Statuses.Completed);
+        _dbContext.Enrollments.Add(e);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetStudentsAsync(group.Id, EnrollmentConstants.Statuses.Completed, CancellationToken.None);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result.Single().StudentCode.Should().Be("STU-COMP");
+    }
+
+    [Fact]
+    public async Task GetStudentsAsync_EmptyGroup_ReturnsEmptyList()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_organizationId, _course.Id, "Empty Group", new DateOnly(2026, 10, 1), new DateOnly(2026, 12, 1));
+        _dbContext.CourseGroups.Add(group);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetStudentsAsync(group.Id, CancellationToken.None);
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetStudentsAsync_NonExistentGroup_ThrowsNotFoundException()
+    {
+        // Act
+        var act = () => _service.GetStudentsAsync(Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    [Fact]
+    public async Task GetStudentsAsync_GroupInDifferentOrganization_ThrowsNotFoundException()
+    {
+        // Arrange - CourseGroup belongs to another org
+        var otherOrgId = Guid.NewGuid();
+        var group = CourseGroup.Create(otherOrgId, _course.Id, "Other Org Group", new DateOnly(2026, 10, 1), new DateOnly(2026, 12, 1));
+        _dbContext.CourseGroups.Add(group);
+        await _dbContext.SaveChangesAsync();
+
+        // Act - Current org is _organizationId
+        var act = () => _service.GetStudentsAsync(group.Id, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    [Fact]
+    public async Task GetStudentsAsync_NoOrganizationContext_ThrowsBadRequestException()
+    {
+        // Arrange
+        _currentOrgServiceMock.Setup(s => s.OrganizationId).Returns((Guid?)null);
+
+        // Act
+        var act = () => _service.GetStudentsAsync(Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*Organization context is required*");
+    }
+
+    #endregion
 }

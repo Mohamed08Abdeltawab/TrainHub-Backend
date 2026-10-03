@@ -23,4 +23,8 @@ public interface ICourseGroupService
     Task<CourseGroupDto> UpdateStatusAsync(Guid id, UpdateCourseGroupStatusDto dto, CancellationToken cancellationToken = default);
 
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TrainHub.Application.Features.Students.DTOs.StudentDto>> GetStudentsAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TrainHub.Application.Features.Students.DTOs.StudentDto>> GetStudentsAsync(Guid id, byte? status, CancellationToken cancellationToken = default);
 }
