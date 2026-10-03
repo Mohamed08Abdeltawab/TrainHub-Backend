@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using TrainHub.Domain.Constants;
+using TrainHub.Domain.Enums;
 
 namespace TrainHub.Domain.Models;
 
@@ -27,6 +28,8 @@ public partial class CourseGroup
     public int Capacity { get; private set; }
 
     public byte Status { get; private set; }
+
+    public CourseGroupStatus GroupStatus => (CourseGroupStatus)Status;
 
     public DateTime CreatedAt { get; private set; }
 
@@ -78,6 +81,7 @@ public partial class CourseGroup
         GuardDateRange(startDate, endDate);
         GuardScheduleDescription(scheduleDescription);
         GuardCapacity(capacity);
+        GuardStatus(status);
 
         var now = DateTime.UtcNow;
 
@@ -107,7 +111,8 @@ public partial class CourseGroup
         DateOnly endDate,
         string? scheduleDescription = null,
         Guid? instructorId = null,
-        int? capacity = null)
+        int? capacity = null,
+        byte? status = null)
     {
         GuardName(name);
         GuardDateRange(startDate, endDate);
@@ -122,6 +127,12 @@ public partial class CourseGroup
             Capacity = capacity.Value;
         }
 
+        if (status.HasValue)
+        {
+            GuardStatus(status.Value);
+            Status = status.Value;
+        }
+
         Name = NormalizeName(name);
         StartDate = startDate;
         EndDate = endDate;
@@ -129,6 +140,63 @@ public partial class CourseGroup
         InstructorId = instructorId;
         UpdatedAt = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Assigns or unassigns an instructor to this course group.
+    /// </summary>
+    public void AssignInstructor(Guid? instructorId)
+    {
+        if (instructorId.HasValue && instructorId.Value == Guid.Empty)
+            throw new ArgumentException("InstructorId cannot be empty GUID.", nameof(instructorId));
+
+        InstructorId = instructorId;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Unassigns the current instructor from this course group.
+    /// </summary>
+    public void UnassignInstructor() => AssignInstructor(null);
+
+    /// <summary>
+    /// Updates the student capacity of this course group.
+    /// </summary>
+    public void UpdateCapacity(int newCapacity)
+    {
+        GuardCapacity(newCapacity);
+        Capacity = newCapacity;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Updates the group status to a new valid status.
+    /// </summary>
+    public void UpdateStatus(byte newStatus)
+    {
+        GuardStatus(newStatus);
+        Status = newStatus;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Updates the group status using the strongly-typed <see cref="CourseGroupStatus"/> enum.
+    /// </summary>
+    public void UpdateStatus(CourseGroupStatus newStatus) => UpdateStatus((byte)newStatus);
+
+    /// <summary>
+    /// Activates the course group, making it available for enrollment and sessions.
+    /// </summary>
+    public void Activate() => UpdateStatus(CourseGroupConstants.Statuses.Active);
+
+    /// <summary>
+    /// Marks the course group as completed.
+    /// </summary>
+    public void Complete() => UpdateStatus(CourseGroupConstants.Statuses.Completed);
+
+    /// <summary>
+    /// Marks the course group as cancelled.
+    /// </summary>
+    public void Cancel() => UpdateStatus(CourseGroupConstants.Statuses.Cancelled);
 
     #region Guard Methods
 
@@ -170,6 +238,16 @@ public partial class CourseGroup
         if (!CourseGroupConstants.IsValidCapacity(capacity))
             throw new ArgumentException(
                 $"Capacity must be between {CourseGroupConstants.MinCapacity} and {CourseGroupConstants.MaxCapacity}.",
+                paramName);
+    }
+
+    private static void GuardStatus(
+        byte status,
+        [CallerArgumentExpression(nameof(status))] string? paramName = null)
+    {
+        if (!CourseGroupConstants.IsValidStatus(status))
+            throw new ArgumentException(
+                $"Status '{status}' is invalid. Allowed statuses are: {string.Join(", ", CourseGroupConstants.Statuses.All)}.",
                 paramName);
     }
 

@@ -27,7 +27,15 @@ public class CourseGroupDto
 
     public int Capacity { get; set; }
 
+    public int EnrolledStudentsCount { get; set; }
+
+    public int AvailableSeats { get; set; }
+
+    public bool IsFull { get; set; }
+
     public byte Status { get; set; }
+
+    public string StatusName { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; }
 

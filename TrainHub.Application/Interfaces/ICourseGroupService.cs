@@ -16,5 +16,11 @@ public interface ICourseGroupService
 
     Task<CourseGroupDto> UpdateAsync(Guid id, UpdateCourseGroupDto dto, CancellationToken cancellationToken = default);
 
+    Task<CourseGroupDto> AssignInstructorAsync(Guid id, AssignInstructorDto dto, CancellationToken cancellationToken = default);
+
+    Task<CourseGroupDto> UpdateCapacityAsync(Guid id, UpdateCourseGroupCapacityDto dto, CancellationToken cancellationToken = default);
+
+    Task<CourseGroupDto> UpdateStatusAsync(Guid id, UpdateCourseGroupStatusDto dto, CancellationToken cancellationToken = default);
+
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }

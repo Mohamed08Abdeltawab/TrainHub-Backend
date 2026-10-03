@@ -53,7 +53,12 @@ public class CourseGroupQueryParameters
     public Guid? InstructorId { get; set; }
 
     /// <summary>
-    /// Field to sort by. Supported values: "CreatedAt", "UpdatedAt", "Name", "StartDate", "EndDate".
+    /// Filter by group status (0 = Draft, 1 = Active, 2 = Completed, 3 = Cancelled).
+    /// </summary>
+    public byte? Status { get; set; }
+
+    /// <summary>
+    /// Field to sort by. Supported values: "CreatedAt", "UpdatedAt", "Name", "StartDate", "EndDate", "Capacity", "Status".
     /// </summary>
     public string? SortBy { get; set; } = "CreatedAt";
 

@@ -97,6 +97,85 @@ public class CourseGroupsController : ControllerBase
     }
 
     /// <summary>
+    /// Assigns or unassigns an instructor to an existing course group.
+    /// </summary>
+    [HttpPut("{id:guid}/instructor")]
+    [HttpPatch("{id:guid}/instructor")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
+    [ProducesResponseType(typeof(CourseGroupDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<CourseGroupDto>> AssignInstructor(
+        Guid id,
+        [FromBody] AssignInstructorDto dto,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP PUT/PATCH api/coursegroups/{Id}/instructor received.", id);
+        var result = await _courseGroupService.AssignInstructorAsync(id, dto, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Unassigns the instructor from an existing course group.
+    /// </summary>
+    [HttpDelete("{id:guid}/instructor")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
+    [ProducesResponseType(typeof(CourseGroupDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CourseGroupDto>> UnassignInstructor(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP DELETE api/coursegroups/{Id}/instructor received.", id);
+        var result = await _courseGroupService.AssignInstructorAsync(id, new AssignInstructorDto { InstructorId = null }, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Updates the student capacity of an existing course group.
+    /// </summary>
+    [HttpPatch("{id:guid}/capacity")]
+    [HttpPut("{id:guid}/capacity")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
+    [ProducesResponseType(typeof(CourseGroupDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<CourseGroupDto>> UpdateCapacity(
+        Guid id,
+        [FromBody] UpdateCourseGroupCapacityDto dto,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP PATCH/PUT api/coursegroups/{Id}/capacity received with capacity '{Capacity}'.", id, dto.Capacity);
+        var result = await _courseGroupService.UpdateCapacityAsync(id, dto, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Updates the lifecycle status of an existing course group.
+    /// </summary>
+    [HttpPatch("{id:guid}/status")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
+    [ProducesResponseType(typeof(CourseGroupDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<CourseGroupDto>> UpdateStatus(
+        Guid id,
+        [FromBody] UpdateCourseGroupStatusDto dto,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP PATCH api/coursegroups/{Id}/status received with status '{Status}'.", id, dto.Status);
+        var result = await _courseGroupService.UpdateStatusAsync(id, dto, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Deletes a course group if it has no associated enrollments or sessions.
     /// </summary>
     [HttpDelete("{id:guid}")]

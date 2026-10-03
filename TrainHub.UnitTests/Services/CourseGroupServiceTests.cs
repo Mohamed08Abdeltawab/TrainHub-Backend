@@ -346,4 +346,292 @@ public class CourseGroupServiceTests : IDisposable
     }
 
     #endregion
+
+    #region AssignInstructorAsync
+
+    [Fact]
+    public async Task AssignInstructorAsync_ValidInstructor_AssignsAndReturnsDto()
+    {
+        // Arrange
+        var group = CourseGroup.Create(
+            _organizationId,
+            _course.Id,
+            "Group Without Instructor",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1));
+        _dbContext.CourseGroups.Add(group);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new AssignInstructorDto { InstructorId = _instructor.Id };
+
+        // Act
+        var result = await _service.AssignInstructorAsync(group.Id, dto, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.InstructorId.Should().Be(_instructor.Id);
+        result.InstructorName.Should().Be("John Doe");
+
+        _validatorMock.Verify(v => v.ValidateAssignInstructorAsync(group.Id, _instructor.Id, _organizationId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AssignInstructorAsync_NullInstructor_UnassignsInstructor()
+    {
+        // Arrange
+        var group = CourseGroup.Create(
+            _organizationId,
+            _course.Id,
+            "Group With Instructor",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1),
+            instructorId: _instructor.Id);
+        _dbContext.CourseGroups.Add(group);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new AssignInstructorDto { InstructorId = null };
+
+        // Act
+        var result = await _service.AssignInstructorAsync(group.Id, dto, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.InstructorId.Should().BeNull();
+        result.InstructorName.Should().BeNull();
+
+        _validatorMock.Verify(v => v.ValidateAssignInstructorAsync(group.Id, null, _organizationId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AssignInstructorAsync_NonExistentGroup_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new AssignInstructorDto { InstructorId = _instructor.Id };
+
+        // Act
+        var act = () => _service.AssignInstructorAsync(Guid.NewGuid(), dto, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*CourseGroup*");
+    }
+
+    [Fact]
+    public async Task AssignInstructorAsync_NullDto_ThrowsArgumentNullException()
+    {
+        // Act
+        var act = () => _service.AssignInstructorAsync(Guid.NewGuid(), null!, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    #endregion
+
+    #region UpdateCapacityAsync
+
+    [Fact]
+    public async Task UpdateCapacityAsync_ValidCapacity_UpdatesAndReturnsDto()
+    {
+        // Arrange
+        var group = CourseGroup.Create(
+            _organizationId,
+            _course.Id,
+            "Capacity Group",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1),
+            capacity: 20);
+        _dbContext.CourseGroups.Add(group);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new UpdateCourseGroupCapacityDto { Capacity = 30 };
+
+        // Act
+        var result = await _service.UpdateCapacityAsync(group.Id, dto, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Capacity.Should().Be(30);
+        result.AvailableSeats.Should().Be(30);
+        result.IsFull.Should().BeFalse();
+
+        _validatorMock.Verify(v => v.ValidateUpdateCapacityAsync(group.Id, 30, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateCapacityAsync_NonExistentGroup_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new UpdateCourseGroupCapacityDto { Capacity = 30 };
+
+        // Act
+        var act = () => _service.UpdateCapacityAsync(Guid.NewGuid(), dto, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*CourseGroup*");
+    }
+
+    [Fact]
+    public async Task UpdateCapacityAsync_NullDto_ThrowsArgumentNullException()
+    {
+        // Act
+        var act = () => _service.UpdateCapacityAsync(Guid.NewGuid(), null!, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    #endregion
+
+    #region UpdateStatusAsync
+
+    [Fact]
+    public async Task UpdateStatusAsync_ValidStatus_UpdatesAndReturnsDto()
+    {
+        // Arrange
+        var group = CourseGroup.Create(
+            _organizationId,
+            _course.Id,
+            "Status Group",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1));
+        _dbContext.CourseGroups.Add(group);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new UpdateCourseGroupStatusDto { Status = CourseGroupConstants.Statuses.Active };
+
+        // Act
+        var result = await _service.UpdateStatusAsync(group.Id, dto, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Status.Should().Be(CourseGroupConstants.Statuses.Active);
+        result.StatusName.Should().Be("Active");
+
+        _validatorMock.Verify(v => v.ValidateUpdateStatusAsync(group.Id, CourseGroupConstants.Statuses.Active, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_NonExistentGroup_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new UpdateCourseGroupStatusDto { Status = CourseGroupConstants.Statuses.Active };
+
+        // Act
+        var act = () => _service.UpdateStatusAsync(Guid.NewGuid(), dto, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*CourseGroup*");
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_NullDto_ThrowsArgumentNullException()
+    {
+        // Act
+        var act = () => _service.UpdateStatusAsync(Guid.NewGuid(), null!, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    #endregion
+
+    #region Capacity Metrics & Status Filter
+
+    [Fact]
+    public async Task GetByIdAsync_WithEnrollments_ReturnsCalculatedCapacityMetrics()
+    {
+        // Arrange
+        var group = CourseGroup.Create(
+            _organizationId,
+            _course.Id,
+            "Enrolled Group",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1),
+            capacity: 2);
+        _dbContext.CourseGroups.Add(group);
+
+        var studentUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Student",
+            LastName = "One",
+            Email = "student1@example.com",
+            UserName = "student1"
+        };
+        _dbContext.ApplicationUsers.Add(studentUser);
+
+        var student = Student.Create(studentUser.Id, _organizationId, "STU-001");
+        _dbContext.Students.Add(student);
+
+        var enrollment1 = new Enrollment
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            CourseGroupId = group.Id,
+            StudentId = student.Id,
+            EnrollmentDate = DateTime.UtcNow,
+            PaidAmount = 100,
+            Status = 1
+        };
+        var enrollment2 = new Enrollment
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            CourseGroupId = group.Id,
+            StudentId = student.Id,
+            EnrollmentDate = DateTime.UtcNow,
+            PaidAmount = 100,
+            Status = 1
+        };
+        _dbContext.Enrollments.AddRange(enrollment1, enrollment2);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetByIdAsync(group.Id, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Capacity.Should().Be(2);
+        result.EnrolledStudentsCount.Should().Be(2);
+        result.AvailableSeats.Should().Be(0);
+        result.IsFull.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithStatusFilter_FiltersCorrectly()
+    {
+        // Arrange
+        var g1 = CourseGroup.Create(
+            _organizationId,
+            _course.Id,
+            "Draft Group",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1),
+            status: CourseGroupConstants.Statuses.Draft);
+        var g2 = CourseGroup.Create(
+            _organizationId,
+            _course.Id,
+            "Active Group",
+            new DateOnly(2026, 10, 5),
+            new DateOnly(2026, 12, 5),
+            status: CourseGroupConstants.Statuses.Active);
+        _dbContext.CourseGroups.AddRange(g1, g2);
+        await _dbContext.SaveChangesAsync();
+
+        var query = new CourseGroupQueryParameters { Status = CourseGroupConstants.Statuses.Active };
+
+        // Act
+        var result = await _service.GetPagedAsync(query, CancellationToken.None);
+
+        // Assert
+        result.TotalCount.Should().Be(1);
+        result.Items.First().Name.Should().Be("Active Group");
+        result.Items.First().Status.Should().Be(CourseGroupConstants.Statuses.Active);
+    }
+
+    #endregion
 }

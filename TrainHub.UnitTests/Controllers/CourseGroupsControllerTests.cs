@@ -160,4 +160,111 @@ public class CourseGroupsControllerTests
         noContentResult.Should().NotBeNull();
         noContentResult!.StatusCode.Should().Be(204);
     }
+
+    [Fact]
+    public async Task AssignInstructor_ReturnsOkResultWithUpdatedGroup()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var instructorId = Guid.NewGuid();
+        var dto = new AssignInstructorDto { InstructorId = instructorId };
+        var expectedGroup = new CourseGroupDto
+        {
+            Id = groupId,
+            InstructorId = instructorId,
+            InstructorName = "Jane Doe"
+        };
+
+        _courseGroupServiceMock.Setup(s => s.AssignInstructorAsync(groupId, dto, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedGroup);
+
+        // Act
+        var result = await _controller.AssignInstructor(groupId, dto, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(expectedGroup);
+    }
+
+    [Fact]
+    public async Task UnassignInstructor_ReturnsOkResultWithUpdatedGroup()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var expectedGroup = new CourseGroupDto
+        {
+            Id = groupId,
+            InstructorId = null,
+            InstructorName = null
+        };
+
+        _courseGroupServiceMock.Setup(s => s.AssignInstructorAsync(
+                groupId,
+                It.Is<AssignInstructorDto>(d => d.InstructorId == null),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedGroup);
+
+        // Act
+        var result = await _controller.UnassignInstructor(groupId, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(expectedGroup);
+    }
+
+    [Fact]
+    public async Task UpdateCapacity_ReturnsOkResultWithUpdatedGroup()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var dto = new UpdateCourseGroupCapacityDto { Capacity = 40 };
+        var expectedGroup = new CourseGroupDto
+        {
+            Id = groupId,
+            Capacity = 40,
+            AvailableSeats = 40
+        };
+
+        _courseGroupServiceMock.Setup(s => s.UpdateCapacityAsync(groupId, dto, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedGroup);
+
+        // Act
+        var result = await _controller.UpdateCapacity(groupId, dto, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(expectedGroup);
+    }
+
+    [Fact]
+    public async Task UpdateStatus_ReturnsOkResultWithUpdatedGroup()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var dto = new UpdateCourseGroupStatusDto { Status = 1 };
+        var expectedGroup = new CourseGroupDto
+        {
+            Id = groupId,
+            Status = 1,
+            StatusName = "Active"
+        };
+
+        _courseGroupServiceMock.Setup(s => s.UpdateStatusAsync(groupId, dto, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedGroup);
+
+        // Act
+        var result = await _controller.UpdateStatus(groupId, dto, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(expectedGroup);
+    }
 }

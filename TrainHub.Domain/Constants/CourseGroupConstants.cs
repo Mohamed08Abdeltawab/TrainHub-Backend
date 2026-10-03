@@ -1,3 +1,5 @@
+using TrainHub.Domain.Enums;
+
 namespace TrainHub.Domain.Constants;
 
 /// <summary>
@@ -13,12 +15,31 @@ public static class CourseGroupConstants
     public const int MinCapacity = 1;
     public const int MaxCapacity = 1000;
 
-    public const byte DefaultStatus = 1;
+    public const byte DefaultStatus = Statuses.Active;
 
     public const int DefaultPageNumber = 1;
     public const int DefaultPageSize = 10;
     public const int MaxPageSize = 100;
     public const int SearchTermMaxLength = 100;
+
+    /// <summary>
+    /// Course group status constants aligned with <see cref="TrainHub.Domain.Enums.CourseGroupStatus"/>.
+    /// </summary>
+    public static class Statuses
+    {
+        public const byte Draft = (byte)CourseGroupStatus.Draft;
+        public const byte Active = (byte)CourseGroupStatus.Active;
+        public const byte Completed = (byte)CourseGroupStatus.Completed;
+        public const byte Cancelled = (byte)CourseGroupStatus.Cancelled;
+
+        public static readonly IReadOnlyList<byte> All = [Draft, Active, Completed, Cancelled];
+
+        public static bool IsValid(byte status) => Enum.IsDefined(typeof(CourseGroupStatus), status);
+
+        public static string GetName(byte status) => IsValid(status)
+            ? ((CourseGroupStatus)status).ToString()
+            : "Unknown";
+    }
 
     public static readonly IReadOnlyList<string> AllowedSortFields =
     [
@@ -26,7 +47,9 @@ public static class CourseGroupConstants
         "UpdatedAt",
         "Name",
         "StartDate",
-        "EndDate"
+        "EndDate",
+        "Capacity",
+        "Status"
     ];
 
     /// <summary>
@@ -63,6 +86,11 @@ public static class CourseGroupConstants
     /// </summary>
     public static bool IsValidCapacity(int capacity) =>
         capacity is >= MinCapacity and <= MaxCapacity;
+
+    /// <summary>
+    /// Validates whether a course group status is recognized.
+    /// </summary>
+    public static bool IsValidStatus(byte status) => Statuses.IsValid(status);
 
     /// <summary>
     /// Validates whether a sort field name is recognized and supported.

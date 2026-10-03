@@ -31,4 +31,7 @@ public class CreateCourseGroupDto
     [Range(CourseGroupConstants.MinCapacity, CourseGroupConstants.MaxCapacity,
         ErrorMessage = "Capacity must be between 1 and 1000.")]
     public int? Capacity { get; set; }
+
+    [Range(0, 3, ErrorMessage = "Status must be a valid course group status (0 = Draft, 1 = Active, 2 = Completed, 3 = Cancelled).")]
+    public byte Status { get; set; } = CourseGroupConstants.Statuses.Active;
 }

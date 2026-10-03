@@ -266,4 +266,156 @@ public class CourseGroupTests
         act.Should().Throw<ArgumentException>()
             .WithMessage("*EndDate*cannot be earlier than StartDate*");
     }
+
+    [Fact]
+    public void GroupStatus_ReflectsStatusEnum()
+    {
+        // Act
+        var group = CourseGroup.Create(
+            _validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate,
+            status: CourseGroupConstants.Statuses.Completed);
+
+        // Assert
+        group.Status.Should().Be(CourseGroupConstants.Statuses.Completed);
+        group.GroupStatus.Should().Be(TrainHub.Domain.Enums.CourseGroupStatus.Completed);
+    }
+
+    [Fact]
+    public void AssignInstructor_WithValidId_UpdatesInstructorIdAndTimestamp()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate);
+        var initialUpdatedAt = group.UpdatedAt;
+        var instructorId = Guid.NewGuid();
+
+        // Act
+        group.AssignInstructor(instructorId);
+
+        // Assert
+        group.InstructorId.Should().Be(instructorId);
+        group.UpdatedAt.Should().BeOnOrAfter(initialUpdatedAt);
+    }
+
+    [Fact]
+    public void AssignInstructor_WithNull_UnassignsInstructor()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate, instructorId: _validInstructorId);
+
+        // Act
+        group.AssignInstructor(null);
+
+        // Assert
+        group.InstructorId.Should().BeNull();
+    }
+
+    [Fact]
+    public void UnassignInstructor_SetsInstructorIdToNull()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate, instructorId: _validInstructorId);
+
+        // Act
+        group.UnassignInstructor();
+
+        // Assert
+        group.InstructorId.Should().BeNull();
+    }
+
+    [Fact]
+    public void AssignInstructor_WithEmptyGuid_ThrowsArgumentException()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate);
+
+        // Act
+        var act = () => group.AssignInstructor(Guid.Empty);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*InstructorId*");
+    }
+
+    [Fact]
+    public void UpdateCapacity_WithValidCapacity_UpdatesCapacityAndTimestamp()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate, capacity: 30);
+        var initialUpdatedAt = group.UpdatedAt;
+
+        // Act
+        group.UpdateCapacity(50);
+
+        // Assert
+        group.Capacity.Should().Be(50);
+        group.UpdatedAt.Should().BeOnOrAfter(initialUpdatedAt);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-10)]
+    [InlineData(1001)]
+    public void UpdateCapacity_WithInvalidCapacity_ThrowsArgumentException(int invalidCapacity)
+    {
+        // Arrange
+        var group = CourseGroup.Create(_validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate);
+
+        // Act
+        var act = () => group.UpdateCapacity(invalidCapacity);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Capacity*");
+    }
+
+    [Fact]
+    public void UpdateStatus_WithValidStatus_UpdatesStatusAndTimestamp()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate);
+        var initialUpdatedAt = group.UpdatedAt;
+
+        // Act
+        group.UpdateStatus(CourseGroupConstants.Statuses.Completed);
+
+        // Assert
+        group.Status.Should().Be(CourseGroupConstants.Statuses.Completed);
+        group.GroupStatus.Should().Be(TrainHub.Domain.Enums.CourseGroupStatus.Completed);
+        group.UpdatedAt.Should().BeOnOrAfter(initialUpdatedAt);
+    }
+
+    [Fact]
+    public void UpdateStatus_WithInvalidStatus_ThrowsArgumentException()
+    {
+        // Arrange
+        var group = CourseGroup.Create(_validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate);
+
+        // Act
+        var act = () => group.UpdateStatus(99);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Status*");
+    }
+
+    [Fact]
+    public void LifecycleMethods_UpdateStatusCorrectly()
+    {
+        // Arrange
+        var group = CourseGroup.Create(
+            _validOrgId, _validCourseId, ValidName, ValidStartDate, ValidEndDate,
+            status: CourseGroupConstants.Statuses.Draft);
+
+        // Act & Assert Activate
+        group.Activate();
+        group.Status.Should().Be(CourseGroupConstants.Statuses.Active);
+
+        // Act & Assert Complete
+        group.Complete();
+        group.Status.Should().Be(CourseGroupConstants.Statuses.Completed);
+
+        // Act & Assert Cancel
+        group.Cancel();
+        group.Status.Should().Be(CourseGroupConstants.Statuses.Cancelled);
+    }
 }

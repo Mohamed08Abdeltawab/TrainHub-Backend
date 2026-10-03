@@ -41,10 +41,11 @@ public class CourseGroupService : ICourseGroupService
         // 1. Validate query parameters
         _courseGroupValidator.ValidateQuery(parameters);
 
-        // 2. Base query with Course and Instructor navigation details (tenant filter applied automatically)
+        // 2. Base query with Course, Instructor, and Enrollments navigation details (tenant filter applied automatically)
         var query = _dbContext.CourseGroups
             .AsNoTracking()
             .Include(cg => cg.Course)
+            .Include(cg => cg.Enrollments)
             .Include(cg => cg.Instructor)
                 .ThenInclude(i => i!.User)
             .AsQueryable();
@@ -70,21 +71,29 @@ public class CourseGroupService : ICourseGroupService
             query = query.Where(cg => cg.InstructorId == parameters.InstructorId.Value);
         }
 
-        // 6. Total count before pagination
+        // 6. Status filter
+        if (parameters.Status.HasValue)
+        {
+            query = query.Where(cg => cg.Status == parameters.Status.Value);
+        }
+
+        // 7. Total count before pagination
         var totalCount = await query.CountAsync(cancellationToken);
 
-        // 7. Sorting
+        // 8. Sorting
         var isDescending = parameters.SortDescending;
         query = (parameters.SortBy?.Trim().ToLowerInvariant()) switch
         {
             "name" => isDescending ? query.OrderByDescending(cg => cg.Name).ThenBy(cg => cg.Id) : query.OrderBy(cg => cg.Name).ThenBy(cg => cg.Id),
             "startdate" => isDescending ? query.OrderByDescending(cg => cg.StartDate).ThenBy(cg => cg.Id) : query.OrderBy(cg => cg.StartDate).ThenBy(cg => cg.Id),
             "enddate" => isDescending ? query.OrderByDescending(cg => cg.EndDate).ThenBy(cg => cg.Id) : query.OrderBy(cg => cg.EndDate).ThenBy(cg => cg.Id),
+            "capacity" => isDescending ? query.OrderByDescending(cg => cg.Capacity).ThenBy(cg => cg.Id) : query.OrderBy(cg => cg.Capacity).ThenBy(cg => cg.Id),
+            "status" => isDescending ? query.OrderByDescending(cg => cg.Status).ThenBy(cg => cg.Id) : query.OrderBy(cg => cg.Status).ThenBy(cg => cg.Id),
             "updatedat" => isDescending ? query.OrderByDescending(cg => cg.UpdatedAt).ThenBy(cg => cg.Id) : query.OrderBy(cg => cg.UpdatedAt).ThenBy(cg => cg.Id),
             _ => isDescending ? query.OrderByDescending(cg => cg.CreatedAt).ThenBy(cg => cg.Id) : query.OrderBy(cg => cg.CreatedAt).ThenBy(cg => cg.Id)
         };
 
-        // 8. Pagination
+        // 9. Pagination
         var skip = (parameters.PageNumber - 1) * parameters.PageSize;
         var items = await query
             .Skip(skip)
@@ -103,6 +112,7 @@ public class CourseGroupService : ICourseGroupService
         var group = await _dbContext.CourseGroups
             .AsNoTracking()
             .Include(cg => cg.Course)
+            .Include(cg => cg.Enrollments)
             .Include(cg => cg.Instructor)
                 .ThenInclude(i => i!.User)
             .FirstOrDefaultAsync(cg => cg.Id == id, cancellationToken);
@@ -140,7 +150,8 @@ public class CourseGroupService : ICourseGroupService
             dto.EndDate,
             dto.ScheduleDescription,
             dto.InstructorId,
-            dto.Capacity ?? CourseGroupConstants.DefaultCapacity);
+            dto.Capacity ?? CourseGroupConstants.DefaultCapacity,
+            dto.Status);
 
         await _dbContext.CourseGroups.AddAsync(group, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -156,7 +167,7 @@ public class CourseGroupService : ICourseGroupService
                 .FirstOrDefaultAsync(i => i.Id == group.InstructorId.Value, cancellationToken);
         }
 
-        return MapToDto(group, course, instructor);
+        return MapToDto(group, course, instructor, 0);
     }
 
     public async Task<CourseGroupDto> UpdateAsync(Guid id, UpdateCourseGroupDto dto, CancellationToken cancellationToken = default)
@@ -166,6 +177,7 @@ public class CourseGroupService : ICourseGroupService
         _logger.LogInformation("Updating course group '{CourseGroupId}'.", id);
 
         var group = await _dbContext.CourseGroups
+            .Include(cg => cg.Enrollments)
             .FirstOrDefaultAsync(cg => cg.Id == id, cancellationToken);
 
         if (group == null)
@@ -182,7 +194,8 @@ public class CourseGroupService : ICourseGroupService
             dto.EndDate,
             dto.ScheduleDescription,
             dto.InstructorId,
-            dto.Capacity);
+            dto.Capacity,
+            dto.Status);
 
         _dbContext.CourseGroups.Update(group);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -199,6 +212,117 @@ public class CourseGroupService : ICourseGroupService
         }
 
         return MapToDto(group, course, instructor);
+    }
+
+    public async Task<CourseGroupDto> AssignInstructorAsync(Guid id, AssignInstructorDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        _logger.LogInformation("Assigning instructor '{InstructorId}' to course group '{CourseGroupId}'.", dto.InstructorId, id);
+
+        var group = await _dbContext.CourseGroups
+            .Include(cg => cg.Course)
+            .Include(cg => cg.Enrollments)
+            .FirstOrDefaultAsync(cg => cg.Id == id, cancellationToken);
+
+        if (group == null)
+        {
+            _logger.LogWarning("Course group '{CourseGroupId}' was not found for instructor assignment.", id);
+            throw new NotFoundException("CourseGroup", id);
+        }
+
+        await _courseGroupValidator.ValidateAssignInstructorAsync(id, dto.InstructorId, group.OrganizationId, cancellationToken);
+
+        group.AssignInstructor(dto.InstructorId);
+
+        _dbContext.CourseGroups.Update(group);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Instructor '{InstructorId}' assigned to course group '{CourseGroupId}' successfully.", dto.InstructorId, id);
+
+        Instructor? instructor = null;
+        if (group.InstructorId.HasValue)
+        {
+            instructor = await _dbContext.Instructors
+                .Include(i => i.User)
+                .FirstOrDefaultAsync(i => i.Id == group.InstructorId.Value, cancellationToken);
+        }
+
+        return MapToDto(group, group.Course, instructor);
+    }
+
+    public async Task<CourseGroupDto> UpdateCapacityAsync(Guid id, UpdateCourseGroupCapacityDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        _logger.LogInformation("Updating capacity of course group '{CourseGroupId}' to {Capacity}.", id, dto.Capacity);
+
+        var group = await _dbContext.CourseGroups
+            .Include(cg => cg.Course)
+            .Include(cg => cg.Enrollments)
+            .FirstOrDefaultAsync(cg => cg.Id == id, cancellationToken);
+
+        if (group == null)
+        {
+            _logger.LogWarning("Course group '{CourseGroupId}' was not found for capacity update.", id);
+            throw new NotFoundException("CourseGroup", id);
+        }
+
+        await _courseGroupValidator.ValidateUpdateCapacityAsync(id, dto.Capacity, cancellationToken);
+
+        group.UpdateCapacity(dto.Capacity);
+
+        _dbContext.CourseGroups.Update(group);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Capacity of course group '{CourseGroupId}' updated to {Capacity} successfully.", id, dto.Capacity);
+
+        Instructor? instructor = null;
+        if (group.InstructorId.HasValue)
+        {
+            instructor = await _dbContext.Instructors
+                .Include(i => i.User)
+                .FirstOrDefaultAsync(i => i.Id == group.InstructorId.Value, cancellationToken);
+        }
+
+        return MapToDto(group, group.Course, instructor);
+    }
+
+    public async Task<CourseGroupDto> UpdateStatusAsync(Guid id, UpdateCourseGroupStatusDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        _logger.LogInformation("Updating status of course group '{CourseGroupId}' to {Status}.", id, dto.Status);
+
+        var group = await _dbContext.CourseGroups
+            .Include(cg => cg.Course)
+            .Include(cg => cg.Enrollments)
+            .FirstOrDefaultAsync(cg => cg.Id == id, cancellationToken);
+
+        if (group == null)
+        {
+            _logger.LogWarning("Course group '{CourseGroupId}' was not found for status update.", id);
+            throw new NotFoundException("CourseGroup", id);
+        }
+
+        await _courseGroupValidator.ValidateUpdateStatusAsync(id, dto.Status, cancellationToken);
+
+        group.UpdateStatus(dto.Status);
+
+        _dbContext.CourseGroups.Update(group);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Status of course group '{CourseGroupId}' updated to {Status} successfully.", id, dto.Status);
+
+        Instructor? instructor = null;
+        if (group.InstructorId.HasValue)
+        {
+            instructor = await _dbContext.Instructors
+                .Include(i => i.User)
+                .FirstOrDefaultAsync(i => i.Id == group.InstructorId.Value, cancellationToken);
+        }
+
+        return MapToDto(group, group.Course, instructor);
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
@@ -222,13 +346,16 @@ public class CourseGroupService : ICourseGroupService
         _logger.LogInformation("Course group '{CourseGroupId}' deleted successfully.", id);
     }
 
-    private static CourseGroupDto MapToDto(CourseGroup group, Course? course = null, Instructor? instructor = null)
+    private static CourseGroupDto MapToDto(CourseGroup group, Course? course = null, Instructor? instructor = null, int? enrolledCount = null)
     {
         var resolvedCourse = course ?? group.Course;
         var resolvedInstructor = instructor ?? group.Instructor;
         var instructorName = resolvedInstructor?.User != null
             ? $"{resolvedInstructor.User.FirstName} {resolvedInstructor.User.LastName}".Trim()
             : null;
+
+        var enrollments = enrolledCount ?? group.Enrollments?.Count ?? 0;
+        var available = Math.Max(0, group.Capacity - enrollments);
 
         return new CourseGroupDto
         {
@@ -243,7 +370,11 @@ public class CourseGroupService : ICourseGroupService
             StartDate = group.StartDate,
             EndDate = group.EndDate,
             Capacity = group.Capacity,
+            EnrolledStudentsCount = enrollments,
+            AvailableSeats = available,
+            IsFull = enrollments >= group.Capacity,
             Status = group.Status,
+            StatusName = CourseGroupConstants.Statuses.GetName(group.Status),
             CreatedAt = group.CreatedAt,
             UpdatedAt = group.UpdatedAt
         };
