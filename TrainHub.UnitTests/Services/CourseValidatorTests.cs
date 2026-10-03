@@ -329,15 +329,12 @@ public class CourseValidatorTests : IDisposable
         var course = Course.Create(_organizationId, "Course With Groups");
         _dbContext.Courses.Add(course);
 
-        var group = new CourseGroup
-        {
-            Id = Guid.NewGuid(),
-            CourseId = course.Id,
-            OrganizationId = _organizationId,
-            Name = "Group Alpha",
-            StartDate = DateOnly.FromDateTime(DateTime.UtcNow),
-            EndDate = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(1))
-        };
+        var group = CourseGroup.Create(
+            _organizationId,
+            course.Id,
+            "Group Alpha",
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(1)));
         _dbContext.CourseGroups.Add(group);
         await _dbContext.SaveChangesAsync();
 

@@ -220,14 +220,13 @@ public class InstructorValidatorTests : IDisposable
         var instructor = Instructor.Create(Guid.NewGuid(), _organizationId, "Math");
         _dbContext.Instructors.Add(instructor);
 
-        var courseGroup = new CourseGroup
-        {
-            Id = Guid.NewGuid(),
-            CourseId = Guid.NewGuid(),
-            OrganizationId = _organizationId,
-            Name = "Group A",
-            InstructorId = instructor.Id
-        };
+        var courseGroup = CourseGroup.Create(
+            _organizationId,
+            Guid.NewGuid(),
+            "Group A",
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(1)),
+            instructorId: instructor.Id);
         _dbContext.CourseGroups.Add(courseGroup);
         await _dbContext.SaveChangesAsync();
 

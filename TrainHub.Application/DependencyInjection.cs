@@ -34,6 +34,10 @@ public static class DependencyInjection
         services.AddScoped<ICourseValidator, CourseValidator>();
         services.AddScoped<ICourseService, CourseService>();
 
+        // ── CourseGroup Services ────────────────────────────────────
+        services.AddScoped<ICourseGroupValidator, CourseGroupValidator>();
+        services.AddScoped<ICourseGroupService, CourseGroupService>();
+
         return services;
     }
 }

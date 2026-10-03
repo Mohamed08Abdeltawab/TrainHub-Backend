@@ -129,6 +129,8 @@ public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, Iden
         {
             entity.HasIndex(e => e.CourseId, "IX_CourseGroups_CourseId");
 
+            entity.HasIndex(e => e.InstructorId, "IX_CourseGroups_InstructorId");
+
             entity.HasIndex(e => e.OrganizationId, "IX_CourseGroups_OrganizationId");
 
             entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
