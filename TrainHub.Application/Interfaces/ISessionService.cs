@@ -4,7 +4,7 @@ using TrainHub.Application.Features.Sessions.DTOs;
 namespace TrainHub.Application.Interfaces;
 
 /// <summary>
-/// Service contract for managing Session entities and operations.
+/// Service contract for managing Session entities, scheduling operations, and instructor authorization.
 /// </summary>
 public interface ISessionService
 {
@@ -24,22 +24,27 @@ public interface ISessionService
     Task<IReadOnlyList<SessionDto>> GetByCourseGroupIdAsync(Guid courseGroupId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates a new session within a course group in the current organization.
+    /// Schedules a new session within a course group in the current organization.
     /// </summary>
-    Task<SessionDto> CreateAsync(CreateSessionDto dto, CancellationToken cancellationToken = default);
+    Task<SessionDto> CreateAsync(CreateSessionDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates details of an existing session.
     /// </summary>
-    Task<SessionDto> UpdateAsync(Guid id, UpdateSessionDto dto, CancellationToken cancellationToken = default);
+    Task<SessionDto> UpdateAsync(Guid id, UpdateSessionDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reschedules an existing session to new start/end times and optional room.
+    /// </summary>
+    Task<SessionDto> RescheduleAsync(Guid id, RescheduleSessionDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates the status of an existing session.
     /// </summary>
-    Task<SessionDto> UpdateStatusAsync(Guid id, UpdateSessionStatusDto dto, CancellationToken cancellationToken = default);
+    Task<SessionDto> UpdateStatusAsync(Guid id, UpdateSessionStatusDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes a session record if no dependent attendance records exist.
     /// </summary>
-    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid id, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 }

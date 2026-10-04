@@ -231,7 +231,7 @@ public class SessionServiceTests : IDisposable
         };
 
         // Act
-        var result = await _service.CreateAsync(dto, CancellationToken.None);
+        var result = await _service.CreateAsync(dto, null, CancellationToken.None);
 
         // Assert
         result.Should().NotBeNull();
@@ -252,7 +252,7 @@ public class SessionServiceTests : IDisposable
             EndTime = DateTime.UtcNow.AddDays(1).AddHours(2)
         };
 
-        var act = () => _service.CreateAsync(dto, CancellationToken.None);
+        var act = () => _service.CreateAsync(dto, null, CancellationToken.None);
 
         await act.Should().ThrowAsync<BadRequestException>()
             .WithMessage("*Organization context is required*");
@@ -278,7 +278,7 @@ public class SessionServiceTests : IDisposable
         };
 
         // Act
-        var result = await _service.UpdateAsync(session.Id, dto, CancellationToken.None);
+        var result = await _service.UpdateAsync(session.Id, dto, null, CancellationToken.None);
 
         // Assert
         result.Should().NotBeNull();
@@ -287,6 +287,50 @@ public class SessionServiceTests : IDisposable
         result.Room.Should().Be("Room 303");
         result.InstructorId.Should().Be(_instructor.Id);
         result.Status.Should().Be(SessionConstants.Statuses.Completed);
+    }
+
+    [Fact]
+    public async Task RescheduleAsync_WhenSessionExists_ReschedulesAndReturnsDto()
+    {
+        // Arrange
+        var session = Session.Create(_organizationId, _courseGroup.Id, DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(1).AddHours(2));
+        _dbContext.Sessions.Add(session);
+        await _dbContext.SaveChangesAsync();
+
+        var newStart = DateTime.UtcNow.AddDays(4);
+        var newEnd = newStart.AddHours(2);
+        var dto = new RescheduleSessionDto
+        {
+            StartTime = newStart,
+            EndTime = newEnd,
+            Room = "Room 505"
+        };
+
+        // Act
+        var result = await _service.RescheduleAsync(session.Id, dto, null, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.StartTime.Should().Be(newStart);
+        result.EndTime.Should().Be(newEnd);
+        result.Room.Should().Be("Room 505");
+    }
+
+    [Fact]
+    public async Task RescheduleAsync_WhenNoOrgContext_ThrowsBadRequestException()
+    {
+        _currentOrgServiceMock.Setup(s => s.OrganizationId).Returns((Guid?)null);
+
+        var dto = new RescheduleSessionDto
+        {
+            StartTime = DateTime.UtcNow.AddDays(2),
+            EndTime = DateTime.UtcNow.AddDays(2).AddHours(2)
+        };
+
+        var act = () => _service.RescheduleAsync(Guid.NewGuid(), dto, null, CancellationToken.None);
+
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*Organization context is required*");
     }
 
     [Fact]
@@ -300,7 +344,7 @@ public class SessionServiceTests : IDisposable
         var dto = new UpdateSessionStatusDto { Status = SessionConstants.Statuses.Cancelled };
 
         // Act
-        var result = await _service.UpdateStatusAsync(session.Id, dto, CancellationToken.None);
+        var result = await _service.UpdateStatusAsync(session.Id, dto, null, CancellationToken.None);
 
         // Assert
         result.Status.Should().Be(SessionConstants.Statuses.Cancelled);
@@ -316,7 +360,7 @@ public class SessionServiceTests : IDisposable
         await _dbContext.SaveChangesAsync();
 
         // Act
-        await _service.DeleteAsync(session.Id, CancellationToken.None);
+        await _service.DeleteAsync(session.Id, null, CancellationToken.None);
 
         // Assert
         var deletedSession = await _dbContext.Sessions.FindAsync(session.Id);

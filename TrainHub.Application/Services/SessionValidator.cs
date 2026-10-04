@@ -1,24 +1,31 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Sessions.DTOs;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
+using TrainHub.Domain.Models;
 
 namespace TrainHub.Application.Services;
 
 /// <summary>
-/// Validates business rules, constraints, and relational integrity for Sessions.
+/// Validates business rules, constraints, scheduling data, and instructor authorization for Sessions.
 /// </summary>
 public class SessionValidator : ISessionValidator
 {
     private readonly ITrainHubDbContext _dbContext;
     private readonly ILogger<SessionValidator> _logger;
+    private readonly UserManager<ApplicationUser>? _userManager;
 
-    public SessionValidator(ITrainHubDbContext dbContext, ILogger<SessionValidator> logger)
+    public SessionValidator(
+        ITrainHubDbContext dbContext,
+        ILogger<SessionValidator> logger,
+        UserManager<ApplicationUser>? userManager = null)
     {
         _dbContext = dbContext;
         _logger = logger;
+        _userManager = userManager;
     }
 
     public void ValidateQuery(SessionQueryParameters query)
@@ -64,7 +71,7 @@ public class SessionValidator : ISessionValidator
         }
     }
 
-    public async Task ValidateCreateAsync(CreateSessionDto dto, Guid organizationId, CancellationToken cancellationToken = default)
+    public async Task ValidateCreateAsync(CreateSessionDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
@@ -98,9 +105,10 @@ public class SessionValidator : ISessionValidator
             throw new NotFoundException("Organization", organizationId);
         }
 
-        // 2. Verify CourseGroup exists within the organization
+        // 2. Verify CourseGroup exists within the organization (multi-tenancy)
         var courseGroup = await _dbContext.CourseGroups
             .IgnoreQueryFilters()
+            .Include(cg => cg.Course)
             .FirstOrDefaultAsync(cg => cg.Id == dto.CourseGroupId && cg.OrganizationId == organizationId, cancellationToken);
 
         if (courseGroup == null)
@@ -110,20 +118,13 @@ public class SessionValidator : ISessionValidator
             throw new NotFoundException("CourseGroup", dto.CourseGroupId);
         }
 
-        // 3. Verify CourseGroup is not Cancelled or Completed
-        if (courseGroup.Status == CourseGroupConstants.Statuses.Cancelled)
-        {
-            _logger.LogWarning("Validation failed: Cannot schedule a session for cancelled course group '{CourseGroupId}'.", dto.CourseGroupId);
-            throw new ConflictException("Cannot schedule a session for a cancelled course group.");
-        }
+        // 3. Verify CourseGroup is Active
+        ValidateCourseGroupIsActive(courseGroup);
 
-        if (courseGroup.Status == CourseGroupConstants.Statuses.Completed)
-        {
-            _logger.LogWarning("Validation failed: Cannot schedule a session for completed course group '{CourseGroupId}'.", dto.CourseGroupId);
-            throw new ConflictException("Cannot schedule a session for a completed course group.");
-        }
+        // 4. Verify scheduling dates fall within the CourseGroup date range
+        ValidateCourseGroupDateBoundary(dto.StartTime, dto.EndTime, courseGroup);
 
-        // 4. Verify Instructor exists within the organization and has active user account if provided
+        // 5. Verify Instructor exists within the organization and has active user account if provided
         if (dto.InstructorId.HasValue)
         {
             var instructor = await _dbContext.Instructors
@@ -147,9 +148,12 @@ public class SessionValidator : ISessionValidator
                 throw new ConflictException("Cannot assign an instructor whose user account is inactive.");
             }
         }
+
+        // 6. Instructor authorization check based on CourseGroup/Instructor relationship
+        await ValidateInstructorAuthorizationForCourseGroupAsync(courseGroup, currentUserId, organizationId, dto.InstructorId, cancellationToken);
     }
 
-    public async Task ValidateUpdateAsync(Guid id, UpdateSessionDto dto, Guid organizationId, CancellationToken cancellationToken = default)
+    public async Task ValidateUpdateAsync(Guid id, UpdateSessionDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
@@ -172,25 +176,35 @@ public class SessionValidator : ISessionValidator
                 $"Invalid status '{dto.Status.Value}'. Allowed values: {string.Join(", ", SessionConstants.Statuses.All)}.");
         }
 
-        // 1. Verify Session exists within the organization
+        // 1. Verify Session exists within the organization and through its CourseGroup
         var session = await _dbContext.Sessions
             .IgnoreQueryFilters()
+            .Include(s => s.CourseGroup)
+                .ThenInclude(cg => cg.Course)
             .FirstOrDefaultAsync(s => s.Id == id && s.OrganizationId == organizationId, cancellationToken);
 
         if (session == null)
         {
-            _logger.LogWarning("Validation failed: Session '{SessionId}' was not found for update.", id);
+            _logger.LogWarning("Validation failed: Session '{SessionId}' was not found for update in org '{OrganizationId}'.", id, organizationId);
             throw new NotFoundException("Session", id);
         }
 
-        // 2. Cannot modify a cancelled session
-        if (session.Status == SessionConstants.Statuses.Cancelled)
+        // 2. Prevent invalid session states: cannot modify completed or cancelled sessions
+        ValidateSessionNotEndedOrCancelled(session, "modify");
+
+        // 3. Prevent invalid session state: cannot complete future session
+        if (dto.Status.HasValue && dto.Status.Value == SessionConstants.Statuses.Completed && dto.StartTime > DateTime.UtcNow)
         {
-            _logger.LogWarning("Validation failed: Attempted to modify cancelled session '{SessionId}'.", id);
-            throw new ConflictException("Cannot modify a cancelled session.");
+            throw new ConflictException("Cannot mark a future session as completed.");
         }
 
-        // 3. Verify Instructor exists within the organization and has active user account if provided
+        // 4. Verify scheduling dates fall within CourseGroup date range
+        if (session.CourseGroup != null)
+        {
+            ValidateCourseGroupDateBoundary(dto.StartTime, dto.EndTime, session.CourseGroup);
+        }
+
+        // 5. Verify Instructor exists within the organization and has active user account if provided
         if (dto.InstructorId.HasValue)
         {
             var instructor = await _dbContext.Instructors
@@ -214,9 +228,55 @@ public class SessionValidator : ISessionValidator
                 throw new ConflictException("Cannot assign an instructor whose user account is inactive.");
             }
         }
+
+        // 6. Instructor authorization check based on CourseGroup/Instructor relationship
+        await ValidateInstructorAuthorizationForSessionAsync(session, currentUserId, organizationId, dto.InstructorId, cancellationToken);
     }
 
-    public async Task ValidateUpdateStatusAsync(Guid id, byte status, CancellationToken cancellationToken = default)
+    public async Task ValidateRescheduleAsync(Guid id, RescheduleSessionDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        if (!SessionConstants.IsValidTimeRange(dto.StartTime, dto.EndTime))
+        {
+            _logger.LogWarning("Validation failed: EndTime '{EndTime}' is earlier than or equal to StartTime '{StartTime}'.", dto.EndTime, dto.StartTime);
+            throw new ValidationException(nameof(dto.EndTime), "EndTime must be later than StartTime.");
+        }
+
+        if (!SessionConstants.IsValidRoom(dto.Room))
+        {
+            _logger.LogWarning("Validation failed: Room exceeds max length.");
+            throw new ValidationException(nameof(dto.Room), $"Room exceeds maximum length of {SessionConstants.RoomMaxLength} characters.");
+        }
+
+        // 1. Verify Session exists within the organization
+        var session = await _dbContext.Sessions
+            .IgnoreQueryFilters()
+            .Include(s => s.CourseGroup)
+                .ThenInclude(cg => cg.Course)
+            .FirstOrDefaultAsync(s => s.Id == id && s.OrganizationId == organizationId, cancellationToken);
+
+        if (session == null)
+        {
+            _logger.LogWarning("Validation failed: Session '{SessionId}' was not found for rescheduling.", id);
+            throw new NotFoundException("Session", id);
+        }
+
+        // 2. Prevent invalid session states: cannot reschedule completed or cancelled sessions
+        ValidateSessionNotEndedOrCancelled(session, "reschedule");
+
+        // 3. Verify CourseGroup is active
+        if (session.CourseGroup != null)
+        {
+            ValidateCourseGroupIsActive(session.CourseGroup);
+            ValidateCourseGroupDateBoundary(dto.StartTime, dto.EndTime, session.CourseGroup);
+        }
+
+        // 4. Instructor authorization check based on CourseGroup/Instructor relationship
+        await ValidateInstructorAuthorizationForSessionAsync(session, currentUserId, organizationId, null, cancellationToken);
+    }
+
+    public async Task ValidateUpdateStatusAsync(Guid id, byte status, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         if (!SessionConstants.IsValidStatus(status))
         {
@@ -225,10 +285,11 @@ public class SessionValidator : ISessionValidator
                 $"Invalid status '{status}'. Allowed values: {string.Join(", ", SessionConstants.Statuses.All)}.");
         }
 
-        // 1. Verify Session exists
+        // 1. Verify Session exists within organization
         var session = await _dbContext.Sessions
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+            .Include(s => s.CourseGroup)
+            .FirstOrDefaultAsync(s => s.Id == id && s.OrganizationId == organizationId, cancellationToken);
 
         if (session == null)
         {
@@ -236,28 +297,39 @@ public class SessionValidator : ISessionValidator
             throw new NotFoundException("Session", id);
         }
 
-        // 2. Cannot change status of a cancelled session
+        // 2. Instructor authorization check
+        await ValidateInstructorAuthorizationForSessionAsync(session, currentUserId, organizationId, null, cancellationToken);
+
+        // 3. Cannot change status of a cancelled session
         if (session.Status == SessionConstants.Statuses.Cancelled && status != SessionConstants.Statuses.Cancelled)
         {
             _logger.LogWarning("Validation failed: Attempted to change status of cancelled session '{SessionId}'.", id);
             throw new ConflictException("Cannot change the status of a cancelled session.");
         }
 
-        // 3. Cannot revert a completed session back to draft or scheduled
+        // 4. Cannot revert a completed session back to draft or scheduled
         if (session.Status == SessionConstants.Statuses.Completed &&
             (status == SessionConstants.Statuses.Draft || status == SessionConstants.Statuses.Scheduled))
         {
             _logger.LogWarning("Validation failed: Attempted to revert completed session '{SessionId}' back to draft or scheduled.", id);
             throw new ConflictException("Cannot transition a completed session back to draft or scheduled.");
         }
+
+        // 5. Cannot mark future session as completed
+        if (status == SessionConstants.Statuses.Completed && session.StartTime > DateTime.UtcNow)
+        {
+            _logger.LogWarning("Validation failed: Attempted to mark future session '{SessionId}' as completed.", id);
+            throw new ConflictException("Cannot mark a future session as completed.");
+        }
     }
 
-    public async Task ValidateDeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task ValidateDeleteAsync(Guid id, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
-        // 1. Verify Session exists
+        // 1. Verify Session exists within organization
         var session = await _dbContext.Sessions
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+            .Include(s => s.CourseGroup)
+            .FirstOrDefaultAsync(s => s.Id == id && s.OrganizationId == organizationId, cancellationToken);
 
         if (session == null)
         {
@@ -265,7 +337,10 @@ public class SessionValidator : ISessionValidator
             throw new NotFoundException("Session", id);
         }
 
-        // 2. Verify no active attendance records
+        // 2. Instructor authorization check
+        await ValidateInstructorAuthorizationForSessionAsync(session, currentUserId, organizationId, null, cancellationToken);
+
+        // 3. Verify no active attendance records
         var attendanceCount = await _dbContext.AttendanceRecords
             .IgnoreQueryFilters()
             .CountAsync(a => a.SessionId == id, cancellationToken);
@@ -279,4 +354,144 @@ public class SessionValidator : ISessionValidator
                 "Consider cancelling the session instead.");
         }
     }
+
+    #region Helper Methods
+
+    private static void ValidateCourseGroupIsActive(CourseGroup courseGroup)
+    {
+        if (courseGroup.Status != CourseGroupConstants.Statuses.Active)
+        {
+            throw new ConflictException(
+                $"Cannot schedule a session for a course group that is not active. Current group status is '{CourseGroupConstants.Statuses.GetName(courseGroup.Status)}'.");
+        }
+
+        if (courseGroup.Course != null && courseGroup.Course.Status == CourseConstants.Statuses.Archived)
+        {
+            throw new ConflictException("Cannot schedule a session for a course group whose course is archived.");
+        }
+    }
+
+    private static void ValidateCourseGroupDateBoundary(DateTime startTime, DateTime endTime, CourseGroup courseGroup)
+    {
+        var sessionStartDate = DateOnly.FromDateTime(startTime);
+        var sessionEndDate = DateOnly.FromDateTime(endTime);
+
+        if (sessionStartDate < courseGroup.StartDate || sessionEndDate > courseGroup.EndDate)
+        {
+            throw new ValidationException("StartTime",
+                $"Session must be scheduled within the course group date range ({courseGroup.StartDate:yyyy-MM-dd} to {courseGroup.EndDate:yyyy-MM-dd}).");
+        }
+    }
+
+    private static void ValidateSessionNotEndedOrCancelled(Session session, string operation)
+    {
+        if (session.Status == SessionConstants.Statuses.Cancelled)
+        {
+            throw new ConflictException($"Cannot {operation} a cancelled session.");
+        }
+
+        if (session.Status == SessionConstants.Statuses.Completed)
+        {
+            throw new ConflictException($"Cannot {operation} a completed session.");
+        }
+    }
+
+    private async Task ValidateInstructorAuthorizationForCourseGroupAsync(
+        CourseGroup courseGroup,
+        Guid? currentUserId,
+        Guid organizationId,
+        Guid? targetInstructorId,
+        CancellationToken cancellationToken)
+    {
+        if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty)
+            return;
+
+        var (isOrgStaff, instructor) = await ResolveCallerPermissionsAsync(currentUserId.Value, organizationId, cancellationToken);
+        if (isOrgStaff)
+            return;
+
+        if (instructor == null)
+            throw new ForbiddenAccessException("No active instructor profile is associated with this user.");
+
+        var isGroupInstructor = courseGroup.InstructorId == instructor.Id;
+        var isSessionTarget = targetInstructorId.HasValue && targetInstructorId.Value == instructor.Id;
+
+        if (!isGroupInstructor && !isSessionTarget)
+        {
+            _logger.LogWarning("Instructor '{InstructorId}' attempted to schedule a session for course group '{CourseGroupId}' which they do not teach.",
+                instructor.Id, courseGroup.Id);
+            throw new ForbiddenAccessException("You are not authorized to schedule sessions for this course group.");
+        }
+
+        if (targetInstructorId.HasValue && targetInstructorId.Value != instructor.Id)
+        {
+            _logger.LogWarning("Instructor '{InstructorId}' attempted to assign a session to another instructor '{TargetInstructorId}'.",
+                instructor.Id, targetInstructorId.Value);
+            throw new ForbiddenAccessException("Instructors cannot assign sessions to other instructors.");
+        }
+    }
+
+    private async Task ValidateInstructorAuthorizationForSessionAsync(
+        Session session,
+        Guid? currentUserId,
+        Guid organizationId,
+        Guid? targetInstructorId,
+        CancellationToken cancellationToken)
+    {
+        if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty)
+            return;
+
+        var (isOrgStaff, instructor) = await ResolveCallerPermissionsAsync(currentUserId.Value, organizationId, cancellationToken);
+        if (isOrgStaff)
+            return;
+
+        if (instructor == null)
+            throw new ForbiddenAccessException("No active instructor profile is associated with this user.");
+
+        var isSessionInstructor = session.InstructorId == instructor.Id;
+        var isGroupInstructor = session.CourseGroup != null && session.CourseGroup.InstructorId == instructor.Id;
+
+        if (!isSessionInstructor && !isGroupInstructor)
+        {
+            _logger.LogWarning("Instructor '{InstructorId}' attempted to manage session '{SessionId}' which they do not teach.",
+                instructor.Id, session.Id);
+            throw new ForbiddenAccessException("You are not authorized to manage this session as you are not the instructor for this session or its course group.");
+        }
+
+        if (targetInstructorId.HasValue && targetInstructorId.Value != instructor.Id)
+        {
+            _logger.LogWarning("Instructor '{InstructorId}' attempted to reassign session '{SessionId}' to another instructor '{TargetInstructorId}'.",
+                instructor.Id, session.Id, targetInstructorId.Value);
+            throw new ForbiddenAccessException("Instructors cannot reassign sessions to other instructors.");
+        }
+    }
+
+    private async Task<(bool IsOrgStaff, Instructor? Instructor)> ResolveCallerPermissionsAsync(
+        Guid userId,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        if (_userManager != null)
+        {
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+            if (user != null)
+            {
+                var isSuperAdmin = await _userManager.IsInRoleAsync(user, AppRoles.SuperAdmin);
+                var isOrgAdmin = await _userManager.IsInRoleAsync(user, AppRoles.OrgAdmin);
+
+                if (isSuperAdmin || isOrgAdmin)
+                {
+                    return (true, null);
+                }
+            }
+        }
+
+        var instructor = await _dbContext.Instructors
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(i => i.UserId == userId && i.OrganizationId == organizationId, cancellationToken);
+
+        return (false, instructor);
+    }
+
+    #endregion
 }

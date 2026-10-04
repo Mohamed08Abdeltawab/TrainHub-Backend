@@ -116,7 +116,7 @@ public class SessionsControllerTests
             EndTime = dto.EndTime
         };
 
-        _sessionServiceMock.Setup(s => s.CreateAsync(dto, It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.CreateAsync(dto, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(created);
 
         // Act
@@ -148,11 +148,43 @@ public class SessionsControllerTests
             EndTime = dto.EndTime
         };
 
-        _sessionServiceMock.Setup(s => s.UpdateAsync(sessionId, dto, It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.UpdateAsync(sessionId, dto, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(updated);
 
         // Act
         var result = await _controller.Update(sessionId, dto, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(updated);
+    }
+
+    [Fact]
+    public async Task Reschedule_ReturnsOkResult()
+    {
+        // Arrange
+        var sessionId = Guid.NewGuid();
+        var dto = new RescheduleSessionDto
+        {
+            StartTime = DateTime.UtcNow.AddDays(3),
+            EndTime = DateTime.UtcNow.AddDays(3).AddHours(2),
+            Room = "Room 101"
+        };
+        var updated = new SessionDto
+        {
+            Id = sessionId,
+            StartTime = dto.StartTime,
+            EndTime = dto.EndTime,
+            Room = dto.Room
+        };
+
+        _sessionServiceMock.Setup(s => s.RescheduleAsync(sessionId, dto, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(updated);
+
+        // Act
+        var result = await _controller.Reschedule(sessionId, dto, CancellationToken.None);
 
         // Assert
         var okResult = result.Result as OkObjectResult;
@@ -169,7 +201,7 @@ public class SessionsControllerTests
         var dto = new UpdateSessionStatusDto { Status = 2 };
         var updated = new SessionDto { Id = sessionId, Status = 2 };
 
-        _sessionServiceMock.Setup(s => s.UpdateStatusAsync(sessionId, dto, It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.UpdateStatusAsync(sessionId, dto, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(updated);
 
         // Act
@@ -187,7 +219,7 @@ public class SessionsControllerTests
     {
         // Arrange
         var sessionId = Guid.NewGuid();
-        _sessionServiceMock.Setup(s => s.DeleteAsync(sessionId, It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.DeleteAsync(sessionId, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act

@@ -3,7 +3,7 @@ using TrainHub.Application.Features.Sessions.DTOs;
 namespace TrainHub.Application.Interfaces;
 
 /// <summary>
-/// Contract for validating Session operations and business rules.
+/// Contract for validating Session operations, scheduling rules, and instructor authorization.
 /// </summary>
 public interface ISessionValidator
 {
@@ -13,22 +13,29 @@ public interface ISessionValidator
     void ValidateQuery(SessionQueryParameters query);
 
     /// <summary>
-    /// Validates business invariants and existence checks before creating a session.
+    /// Validates business invariants, CourseGroup scheduling boundaries, existence checks,
+    /// and instructor authorization before creating/scheduling a session.
     /// </summary>
-    Task ValidateCreateAsync(CreateSessionDto dto, Guid organizationId, CancellationToken cancellationToken = default);
+    Task ValidateCreateAsync(CreateSessionDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Validates business invariants and existence checks before updating a session.
+    /// Validates business invariants, scheduling constraints, existence checks,
+    /// and instructor authorization before updating a session.
     /// </summary>
-    Task ValidateUpdateAsync(Guid id, UpdateSessionDto dto, Guid organizationId, CancellationToken cancellationToken = default);
+    Task ValidateUpdateAsync(Guid id, UpdateSessionDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Validates business invariants before updating the status of a session.
+    /// Validates scheduling constraints, CourseGroup date boundaries, and instructor authorization before rescheduling a session.
     /// </summary>
-    Task ValidateUpdateStatusAsync(Guid id, byte status, CancellationToken cancellationToken = default);
+    Task ValidateRescheduleAsync(Guid id, RescheduleSessionDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Validates that a session can be safely deleted.
+    /// Validates business invariants and instructor authorization before updating the status of a session.
     /// </summary>
-    Task ValidateDeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    Task ValidateUpdateStatusAsync(Guid id, byte status, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates that a session exists, the caller is authorized, and no dependent records prevent deletion.
+    /// </summary>
+    Task ValidateDeleteAsync(Guid id, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 }

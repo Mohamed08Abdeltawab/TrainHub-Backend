@@ -177,7 +177,7 @@ public class SessionService : ISessionService
         return dtos;
     }
 
-    public async Task<SessionDto> CreateAsync(CreateSessionDto dto, CancellationToken cancellationToken = default)
+    public async Task<SessionDto> CreateAsync(CreateSessionDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
@@ -191,7 +191,7 @@ public class SessionService : ISessionService
         _logger.LogInformation("Creating session for group '{CourseGroupId}' in org '{OrganizationId}'.",
             dto.CourseGroupId, organizationId.Value);
 
-        await _sessionValidator.ValidateCreateAsync(dto, organizationId.Value, cancellationToken);
+        await _sessionValidator.ValidateCreateAsync(dto, organizationId.Value, currentUserId, cancellationToken);
 
         var courseGroup = await _dbContext.CourseGroups
             .IgnoreQueryFilters()
@@ -224,7 +224,7 @@ public class SessionService : ISessionService
         return MapToDto(created);
     }
 
-    public async Task<SessionDto> UpdateAsync(Guid id, UpdateSessionDto dto, CancellationToken cancellationToken = default)
+    public async Task<SessionDto> UpdateAsync(Guid id, UpdateSessionDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
@@ -237,7 +237,7 @@ public class SessionService : ISessionService
 
         _logger.LogInformation("Updating session '{SessionId}' in organization '{OrganizationId}'.", id, organizationId.Value);
 
-        await _sessionValidator.ValidateUpdateAsync(id, dto, organizationId.Value, cancellationToken);
+        await _sessionValidator.ValidateUpdateAsync(id, dto, organizationId.Value, currentUserId, cancellationToken);
 
         var session = await _dbContext.Sessions
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
@@ -271,13 +271,62 @@ public class SessionService : ISessionService
         return MapToDto(updated);
     }
 
-    public async Task<SessionDto> UpdateStatusAsync(Guid id, UpdateSessionStatusDto dto, CancellationToken cancellationToken = default)
+    public async Task<SessionDto> RescheduleAsync(Guid id, RescheduleSessionDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        var organizationId = _currentOrganizationService.OrganizationId;
+        if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
+        {
+            _logger.LogWarning("Cannot reschedule session: Organization ID could not be determined from current context.");
+            throw new BadRequestException("Organization context is required.");
+        }
+
+        _logger.LogInformation("Rescheduling session '{SessionId}' in organization '{OrganizationId}'.", id, organizationId.Value);
+
+        await _sessionValidator.ValidateRescheduleAsync(id, dto, organizationId.Value, currentUserId, cancellationToken);
+
+        var session = await _dbContext.Sessions
+            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+
+        if (session == null)
+        {
+            _logger.LogWarning("Session '{SessionId}' was not found for rescheduling.", id);
+            throw new NotFoundException("Session", id);
+        }
+
+        session.Reschedule(dto.StartTime, dto.EndTime, dto.Room);
+
+        _dbContext.Sessions.Update(session);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Session '{SessionId}' rescheduled successfully.", id);
+
+        var updated = await _dbContext.Sessions
+            .AsNoTracking()
+            .Include(s => s.CourseGroup)
+                .ThenInclude(cg => cg.Course)
+            .Include(s => s.Instructor)
+                .ThenInclude(i => i!.User)
+            .FirstAsync(s => s.Id == id, cancellationToken);
+
+        return MapToDto(updated);
+    }
+
+    public async Task<SessionDto> UpdateStatusAsync(Guid id, UpdateSessionStatusDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        var organizationId = _currentOrganizationService.OrganizationId;
+        if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
+        {
+            _logger.LogWarning("Cannot update session status: Organization ID could not be determined from current context.");
+            throw new BadRequestException("Organization context is required.");
+        }
+
         _logger.LogInformation("Updating status of session '{SessionId}' to '{Status}'.", id, dto.Status);
 
-        await _sessionValidator.ValidateUpdateStatusAsync(id, dto.Status, cancellationToken);
+        await _sessionValidator.ValidateUpdateStatusAsync(id, dto.Status, organizationId.Value, currentUserId, cancellationToken);
 
         var session = await _dbContext.Sessions
             .Include(s => s.CourseGroup)
@@ -300,11 +349,18 @@ public class SessionService : ISessionService
         return MapToDto(session);
     }
 
-    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(Guid id, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
+        var organizationId = _currentOrganizationService.OrganizationId;
+        if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
+        {
+            _logger.LogWarning("Cannot delete session: Organization ID could not be determined from current context.");
+            throw new BadRequestException("Organization context is required.");
+        }
+
         _logger.LogInformation("Deleting session '{SessionId}'.", id);
 
-        await _sessionValidator.ValidateDeleteAsync(id, cancellationToken);
+        await _sessionValidator.ValidateDeleteAsync(id, organizationId.Value, currentUserId, cancellationToken);
 
         var session = await _dbContext.Sessions
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
