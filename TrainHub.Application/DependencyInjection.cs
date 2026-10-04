@@ -42,6 +42,10 @@ public static class DependencyInjection
         services.AddScoped<IEnrollmentValidator, EnrollmentValidator>();
         services.AddScoped<IEnrollmentService, EnrollmentService>();
 
+        // ── Session Services ────────────────────────────────────────
+        services.AddScoped<ISessionValidator, SessionValidator>();
+        services.AddScoped<ISessionService, SessionService>();
+
         return services;
     }
 }

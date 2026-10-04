@@ -245,15 +245,12 @@ public class InstructorValidatorTests : IDisposable
         var instructor = Instructor.Create(Guid.NewGuid(), _organizationId, "Physics");
         _dbContext.Instructors.Add(instructor);
 
-        var session = new Session
-        {
-            Id = Guid.NewGuid(),
-            CourseGroupId = Guid.NewGuid(),
-            OrganizationId = _organizationId,
-            InstructorId = instructor.Id,
-            StartTime = DateTime.UtcNow,
-            EndTime = DateTime.UtcNow.AddHours(2)
-        };
+        var session = Session.Create(
+            _organizationId,
+            Guid.NewGuid(),
+            DateTime.UtcNow,
+            DateTime.UtcNow.AddHours(2),
+            instructorId: instructor.Id);
         _dbContext.Sessions.Add(session);
         await _dbContext.SaveChangesAsync();
 

@@ -373,15 +373,12 @@ public class EnrollmentValidatorTests : IDisposable
         var enrollment = Enrollment.Create(_organizationId, _courseGroup.Id, _student.Id);
         _dbContext.Enrollments.Add(enrollment);
 
-        var session = new Session
-        {
-            Id = Guid.NewGuid(),
-            OrganizationId = _organizationId,
-            CourseGroupId = _courseGroup.Id,
-            StartTime = DateTime.UtcNow,
-            EndTime = DateTime.UtcNow.AddHours(2),
-            Status = 1
-        };
+        var session = Session.Create(
+            _organizationId,
+            _courseGroup.Id,
+            DateTime.UtcNow,
+            DateTime.UtcNow.AddHours(2),
+            status: 1);
         _dbContext.Sessions.Add(session);
 
         var attendance = new AttendanceRecord
