@@ -381,14 +381,11 @@ public class EnrollmentValidatorTests : IDisposable
             status: 1);
         _dbContext.Sessions.Add(session);
 
-        var attendance = new AttendanceRecord
-        {
-            Id = Guid.NewGuid(),
-            OrganizationId = _organizationId,
-            SessionId = session.Id,
-            StudentId = _student.Id,
-            Status = 1
-        };
+        var attendance = AttendanceRecord.Create(
+            _organizationId,
+            session.Id,
+            _student.Id,
+            status: 1);
         _dbContext.AttendanceRecords.Add(attendance);
         await _dbContext.SaveChangesAsync();
 

@@ -645,15 +645,11 @@ public class SessionValidatorTests : IDisposable
         var student = Student.Create(studentUser.Id, _organizationId, "STU-001");
         _dbContext.Students.Add(student);
 
-        var attendance = new AttendanceRecord
-        {
-            Id = Guid.NewGuid(),
-            OrganizationId = _organizationId,
-            SessionId = session.Id,
-            StudentId = student.Id,
-            Status = 1,
-            MarkedAt = DateTime.UtcNow
-        };
+        var attendance = AttendanceRecord.Create(
+            _organizationId,
+            session.Id,
+            student.Id,
+            status: 1);
         _dbContext.AttendanceRecords.Add(attendance);
         await _dbContext.SaveChangesAsync();
 

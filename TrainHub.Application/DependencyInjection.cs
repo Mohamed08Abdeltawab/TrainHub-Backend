@@ -46,6 +46,10 @@ public static class DependencyInjection
         services.AddScoped<ISessionValidator, SessionValidator>();
         services.AddScoped<ISessionService, SessionService>();
 
+        // ── Attendance Services ─────────────────────────────────────
+        services.AddScoped<IAttendanceValidator, AttendanceValidator>();
+        services.AddScoped<IAttendanceService, AttendanceService>();
+
         return services;
     }
 }
