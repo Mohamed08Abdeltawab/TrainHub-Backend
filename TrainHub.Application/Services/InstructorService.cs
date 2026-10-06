@@ -275,6 +275,18 @@ public class InstructorService : IInstructorService
 
         instructor.UpdateProfile(dto.Specialization, dto.Bio);
 
+        if (instructor.User != null)
+        {
+            if (!string.IsNullOrWhiteSpace(dto.FirstName))
+                instructor.User.FirstName = dto.FirstName.Trim();
+
+            if (!string.IsNullOrWhiteSpace(dto.LastName))
+                instructor.User.LastName = dto.LastName.Trim();
+
+            if (dto.PhoneNumber != null)
+                instructor.User.PhoneNumber = dto.PhoneNumber.Trim();
+        }
+
         _dbContext.Instructors.Update(instructor);
         await _dbContext.SaveChangesAsync(cancellationToken);
 

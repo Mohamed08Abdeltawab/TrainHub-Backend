@@ -205,6 +205,18 @@ public class StudentService : IStudentService
 
         student.UpdateProfile(dto.StudentCode, dto.GuardianPhone, dto.AcademicYear, dto.DateOfBirth, dto.Notes);
 
+        if (student.User != null)
+        {
+            if (!string.IsNullOrWhiteSpace(dto.FirstName))
+                student.User.FirstName = dto.FirstName.Trim();
+
+            if (!string.IsNullOrWhiteSpace(dto.LastName))
+                student.User.LastName = dto.LastName.Trim();
+
+            if (dto.PhoneNumber != null)
+                student.User.PhoneNumber = dto.PhoneNumber.Trim();
+        }
+
         _dbContext.Students.Update(student);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
