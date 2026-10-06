@@ -23,6 +23,8 @@ public partial class AttendanceRecord
 
     public AttendanceStatus AttendanceStatus => (AttendanceStatus)Status;
 
+    public bool IsAttended => Status == AttendanceConstants.Statuses.Present || Status == AttendanceConstants.Statuses.Late;
+
     public DateTime MarkedAt { get; private set; }
 
     public string? Notes { get; private set; }

@@ -68,4 +68,16 @@ public static class AttendanceConstants
 
         return AllowedSortFields.Contains(sortField.Trim(), StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Calculates the attendance percentage: (attendedCount / totalRecords) * 100, rounded to 2 decimal places.
+    /// Returns 0 when totalRecords is 0.
+    /// </summary>
+    public static decimal CalculatePercentage(int attendedCount, int totalRecords)
+    {
+        if (totalRecords <= 0 || attendedCount <= 0)
+            return 0.00m;
+
+        return Math.Round((decimal)attendedCount / totalRecords * 100m, 2, MidpointRounding.AwayFromZero);
+    }
 }

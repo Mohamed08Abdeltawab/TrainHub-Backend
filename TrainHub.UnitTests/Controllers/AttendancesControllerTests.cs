@@ -50,7 +50,7 @@ public class AttendancesControllerTests
             pageNumber: 1,
             pageSize: 10);
 
-        _attendanceServiceMock.Setup(s => s.GetPagedAsync(It.IsAny<AttendanceQueryParameters>(), It.IsAny<CancellationToken>()))
+        _attendanceServiceMock.Setup(s => s.GetPagedAsync(It.IsAny<AttendanceQueryParameters>(), _userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResult);
 
         // Act
@@ -75,7 +75,7 @@ public class AttendancesControllerTests
             StatusName = "Present"
         };
 
-        _attendanceServiceMock.Setup(s => s.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+        _attendanceServiceMock.Setup(s => s.GetByIdAsync(id, _userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(dto);
 
         // Act
@@ -98,7 +98,7 @@ public class AttendancesControllerTests
             new() { Id = Guid.NewGuid(), SessionId = sessionId, StudentName = "Alice" }
         };
 
-        _attendanceServiceMock.Setup(s => s.GetBySessionIdAsync(sessionId, It.IsAny<CancellationToken>()))
+        _attendanceServiceMock.Setup(s => s.GetBySessionIdAsync(sessionId, _userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(dtos);
 
         // Act
@@ -109,6 +109,35 @@ public class AttendancesControllerTests
         okResult.Should().NotBeNull();
         okResult!.StatusCode.Should().Be(200);
         okResult.Value.Should().BeEquivalentTo(dtos);
+    }
+
+    [Fact]
+    public async Task GetPercentage_ReturnsOkResultWithAttendancePercentageDto()
+    {
+        // Arrange
+        var studentId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        var percentageDto = new AttendancePercentageDto
+        {
+            StudentId = studentId,
+            StudentName = "Alice",
+            CourseGroupId = groupId,
+            TotalRecords = 10,
+            AttendedCount = 8,
+            AttendancePercentage = 80.00m
+        };
+
+        _attendanceServiceMock.Setup(s => s.GetPercentageAsync(studentId, groupId, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(percentageDto);
+
+        // Act
+        var result = await _controller.GetPercentage(studentId, groupId, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(percentageDto);
     }
 
     [Fact]

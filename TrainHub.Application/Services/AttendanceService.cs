@@ -31,7 +31,10 @@ public class AttendanceService : IAttendanceService
         _logger = logger;
     }
 
-    public async Task<PagedResult<AttendanceDto>> GetPagedAsync(AttendanceQueryParameters parameters, CancellationToken cancellationToken = default)
+    public Task<PagedResult<AttendanceDto>> GetPagedAsync(AttendanceQueryParameters parameters, CancellationToken cancellationToken = default) =>
+        GetPagedAsync(parameters, null, cancellationToken);
+
+    public async Task<PagedResult<AttendanceDto>> GetPagedAsync(AttendanceQueryParameters parameters, Guid? currentUserId, CancellationToken cancellationToken = default)
     {
         parameters ??= new AttendanceQueryParameters();
 
@@ -40,13 +43,51 @@ public class AttendanceService : IAttendanceService
 
         _attendanceValidator.ValidateQuery(parameters);
 
+        var organizationId = _currentOrganizationService.OrganizationId;
+
         var query = _dbContext.AttendanceRecords
             .AsNoTracking()
             .Include(a => a.Student)
                 .ThenInclude(s => s.User)
             .Include(a => a.MarkedByUser)
             .Include(a => a.Session)
+                .ThenInclude(s => s.CourseGroup)
             .AsQueryable();
+
+        if (organizationId.HasValue && organizationId.Value != Guid.Empty)
+        {
+            query = query.Where(a => a.OrganizationId == organizationId.Value);
+
+            // Apply caller-based authorization/filtering if current user context is provided
+            if (currentUserId.HasValue)
+            {
+                var caller = await _attendanceValidator.ResolveCallerPermissionsAsync(currentUserId.Value, organizationId.Value, cancellationToken);
+
+                if (!caller.IsOrgStaff)
+                {
+                    if (caller.Student != null)
+                    {
+                        if (parameters.StudentId.HasValue && parameters.StudentId.Value != caller.Student.Id)
+                        {
+                            _logger.LogWarning("Student '{StudentId}' attempted to query attendance of student '{TargetStudentId}'.",
+                                caller.Student.Id, parameters.StudentId.Value);
+                            throw new ForbiddenAccessException("Students can only view their own attendance records.");
+                        }
+
+                        query = query.Where(a => a.StudentId == caller.Student.Id);
+                    }
+                    else if (caller.Instructor != null)
+                    {
+                        query = query.Where(a => a.Session.InstructorId == caller.Instructor.Id ||
+                                                 (a.Session.CourseGroup != null && a.Session.CourseGroup.InstructorId == caller.Instructor.Id));
+                    }
+                    else
+                    {
+                        throw new ForbiddenAccessException("You are not authorized to view attendance records.");
+                    }
+                }
+            }
+        }
 
         if (parameters.SessionId.HasValue)
         {
@@ -100,17 +141,33 @@ public class AttendanceService : IAttendanceService
         return new PagedResult<AttendanceDto>(dtos, totalCount, parameters.PageNumber, parameters.PageSize);
     }
 
-    public async Task<AttendanceDto> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public Task<AttendanceDto> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        GetByIdAsync(id, null, cancellationToken);
+
+    public async Task<AttendanceDto> GetByIdAsync(Guid id, Guid? currentUserId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Retrieving attendance record with ID '{Id}'.", id);
 
-        var record = await _dbContext.AttendanceRecords
+        var organizationId = _currentOrganizationService.OrganizationId;
+        if (organizationId.HasValue && organizationId.Value != Guid.Empty)
+        {
+            await _attendanceValidator.ValidateGetByIdAsync(id, organizationId.Value, currentUserId, cancellationToken);
+        }
+
+        var query = _dbContext.AttendanceRecords
             .AsNoTracking()
             .Include(a => a.Student)
                 .ThenInclude(s => s.User)
             .Include(a => a.MarkedByUser)
             .Include(a => a.Session)
-            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+            .AsQueryable();
+
+        if (organizationId.HasValue && organizationId.Value != Guid.Empty)
+        {
+            query = query.Where(a => a.OrganizationId == organizationId.Value);
+        }
+
+        var record = await query.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
 
         if (record == null)
         {
@@ -121,7 +178,10 @@ public class AttendanceService : IAttendanceService
         return MapToDto(record);
     }
 
-    public async Task<IReadOnlyList<AttendanceDto>> GetBySessionIdAsync(Guid sessionId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<AttendanceDto>> GetBySessionIdAsync(Guid sessionId, CancellationToken cancellationToken = default) =>
+        GetBySessionIdAsync(sessionId, null, cancellationToken);
+
+    public async Task<IReadOnlyList<AttendanceDto>> GetBySessionIdAsync(Guid sessionId, Guid? currentUserId, CancellationToken cancellationToken = default)
     {
         var organizationId = _currentOrganizationService.OrganizationId;
         if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
@@ -129,6 +189,8 @@ public class AttendanceService : IAttendanceService
             _logger.LogWarning("Cannot retrieve attendance records: Organization ID could not be determined from current context.");
             throw new BadRequestException("Organization context is required.");
         }
+
+        await _attendanceValidator.ValidateGetBySessionIdAsync(sessionId, organizationId.Value, currentUserId, cancellationToken);
 
         var sessionExists = await _dbContext.Sessions
             .AsNoTracking()
@@ -157,6 +219,83 @@ public class AttendanceService : IAttendanceService
         _logger.LogInformation("Retrieved {Count} attendance record(s) for session '{SessionId}'.", dtos.Count, sessionId);
 
         return dtos;
+    }
+
+    public async Task<AttendancePercentageDto> GetPercentageAsync(
+        Guid studentId,
+        Guid? courseGroupId = null,
+        Guid? currentUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = _currentOrganizationService.OrganizationId;
+        if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
+        {
+            _logger.LogWarning("Cannot calculate attendance percentage: Organization ID could not be determined from current context.");
+            throw new BadRequestException("Organization context is required.");
+        }
+
+        _logger.LogInformation("Calculating attendance percentage for student '{StudentId}' (Group: {CourseGroupId}) in org '{OrganizationId}'.",
+            studentId, courseGroupId, organizationId.Value);
+
+        await _attendanceValidator.ValidateGetPercentageAsync(studentId, courseGroupId, organizationId.Value, currentUserId, cancellationToken);
+
+        var student = await _dbContext.Students
+            .AsNoTracking()
+            .Include(s => s.User)
+            .FirstOrDefaultAsync(s => s.Id == studentId && s.OrganizationId == organizationId.Value, cancellationToken);
+
+        if (student == null)
+        {
+            throw new NotFoundException("Student", studentId);
+        }
+
+        CourseGroup? courseGroup = null;
+        if (courseGroupId.HasValue)
+        {
+            courseGroup = await _dbContext.CourseGroups
+                .AsNoTracking()
+                .FirstOrDefaultAsync(cg => cg.Id == courseGroupId.Value && cg.OrganizationId == organizationId.Value, cancellationToken);
+        }
+
+        var query = _dbContext.AttendanceRecords
+            .AsNoTracking()
+            .Where(a => a.StudentId == studentId && a.OrganizationId == organizationId.Value);
+
+        if (courseGroupId.HasValue)
+        {
+            query = query.Where(a => a.Session.CourseGroupId == courseGroupId.Value);
+        }
+
+        var records = await query.ToListAsync(cancellationToken);
+
+        var totalRecords = records.Count;
+        var presentCount = records.Count(r => r.Status == AttendanceConstants.Statuses.Present);
+        var lateCount = records.Count(r => r.Status == AttendanceConstants.Statuses.Late);
+        var absentCount = records.Count(r => r.Status == AttendanceConstants.Statuses.Absent);
+        var excusedCount = records.Count(r => r.Status == AttendanceConstants.Statuses.Excused);
+        var attendedCount = presentCount + lateCount;
+
+        var percentage = AttendanceConstants.CalculatePercentage(attendedCount, totalRecords);
+
+        var studentName = student.User != null
+            ? $"{student.User.FirstName} {student.User.LastName}".Trim()
+            : string.Empty;
+
+        return new AttendancePercentageDto
+        {
+            StudentId = student.Id,
+            StudentName = studentName,
+            StudentCode = student.StudentCode,
+            CourseGroupId = courseGroup?.Id,
+            CourseGroupName = courseGroup?.Name,
+            TotalRecords = totalRecords,
+            AttendedCount = attendedCount,
+            PresentCount = presentCount,
+            LateCount = lateCount,
+            AbsentCount = absentCount,
+            ExcusedCount = excusedCount,
+            AttendancePercentage = percentage
+        };
     }
 
     public async Task<AttendanceDto> CreateAsync(CreateAttendanceDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default)

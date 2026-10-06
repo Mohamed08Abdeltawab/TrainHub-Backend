@@ -272,4 +272,35 @@ public class AttendanceRecordTests
         // Assert
         record.Notes.Should().Be("Doctor excuse submitted");
     }
+
+    [Theory]
+    [InlineData(AttendanceConstants.Statuses.Present, true)]
+    [InlineData(AttendanceConstants.Statuses.Late, true)]
+    [InlineData(AttendanceConstants.Statuses.Absent, false)]
+    [InlineData(AttendanceConstants.Statuses.Excused, false)]
+    public void IsAttended_ReturnsExpectedValueForStatus(byte status, bool expected)
+    {
+        // Arrange
+        var record = AttendanceRecord.Create(_validOrgId, _validSessionId, _validStudentId, status: status);
+
+        // Act & Assert
+        record.IsAttended.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0.0)]
+    [InlineData(0, 5, 0.0)]
+    [InlineData(5, 0, 0.0)]
+    [InlineData(5, 5, 100.0)]
+    [InlineData(9, 10, 90.0)]
+    [InlineData(1, 3, 33.33)]
+    [InlineData(2, 3, 66.67)]
+    public void CalculatePercentage_ReturnsCorrectRoundedPercentage(int attended, int total, decimal expected)
+    {
+        // Act
+        var result = AttendanceConstants.CalculatePercentage(attended, total);
+
+        // Assert
+        result.Should().Be(expected);
+    }
 }

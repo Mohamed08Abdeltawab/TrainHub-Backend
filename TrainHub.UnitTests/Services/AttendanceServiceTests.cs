@@ -288,4 +288,135 @@ public class AttendanceServiceTests : IDisposable
         // Assert
         _dbContext.AttendanceRecords.Should().NotContain(a => a.Id == record.Id);
     }
+
+    #region Percentage Tests
+
+    [Fact]
+    public async Task GetPercentageAsync_WithRecords_CalculatesCorrectPercentageAndBreakdown()
+    {
+        // Arrange
+        // Session 1: Present
+        var r1 = AttendanceRecord.Create(_organizationId, _session.Id, _student.Id, AttendanceConstants.Statuses.Present);
+        _dbContext.AttendanceRecords.Add(r1);
+
+        // Session 2: Late
+        var s2 = Session.Create(_organizationId, _courseGroup.Id, DateTime.UtcNow.AddDays(2), DateTime.UtcNow.AddDays(2).AddHours(1));
+        _dbContext.Sessions.Add(s2);
+        var r2 = AttendanceRecord.Create(_organizationId, s2.Id, _student.Id, AttendanceConstants.Statuses.Late);
+        _dbContext.AttendanceRecords.Add(r2);
+
+        // Session 3: Absent
+        var s3 = Session.Create(_organizationId, _courseGroup.Id, DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(3).AddHours(1));
+        _dbContext.Sessions.Add(s3);
+        var r3 = AttendanceRecord.Create(_organizationId, s3.Id, _student.Id, AttendanceConstants.Statuses.Absent);
+        _dbContext.AttendanceRecords.Add(r3);
+
+        // Session 4: Excused
+        var s4 = Session.Create(_organizationId, _courseGroup.Id, DateTime.UtcNow.AddDays(4), DateTime.UtcNow.AddDays(4).AddHours(1));
+        _dbContext.Sessions.Add(s4);
+        var r4 = AttendanceRecord.Create(_organizationId, s4.Id, _student.Id, AttendanceConstants.Statuses.Excused);
+        _dbContext.AttendanceRecords.Add(r4);
+
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetPercentageAsync(_student.Id, _courseGroup.Id, null, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.StudentId.Should().Be(_student.Id);
+        result.StudentCode.Should().Be("STU-001");
+        result.StudentName.Should().Be("Alice Wonder");
+        result.CourseGroupId.Should().Be(_courseGroup.Id);
+        result.CourseGroupName.Should().Be("Cohort A");
+        result.TotalRecords.Should().Be(4);
+        result.AttendedCount.Should().Be(2); // Present + Late
+        result.PresentCount.Should().Be(1);
+        result.LateCount.Should().Be(1);
+        result.AbsentCount.Should().Be(1);
+        result.ExcusedCount.Should().Be(1);
+        result.AttendancePercentage.Should().Be(50.00m); // (2 / 4) * 100 = 50.00
+    }
+
+    [Fact]
+    public async Task GetPercentageAsync_WhenZeroRecords_ReturnsZeroPercentage()
+    {
+        // Act
+        var result = await _service.GetPercentageAsync(_student.Id, _courseGroup.Id, null, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalRecords.Should().Be(0);
+        result.AttendedCount.Should().Be(0);
+        result.AttendancePercentage.Should().Be(0.00m);
+    }
+
+    [Fact]
+    public async Task GetPercentageAsync_WithoutOrganizationContext_ThrowsBadRequestException()
+    {
+        // Arrange
+        _currentOrgServiceMock.Setup(s => s.OrganizationId).Returns((Guid?)null);
+
+        // Act
+        var act = () => _service.GetPercentageAsync(_student.Id, null, null, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*Organization context is required*");
+    }
+
+    #endregion
+
+    #region Caller Authorization Filtering Tests
+
+    [Fact]
+    public async Task GetPagedAsync_WhenCallerIsStudent_FiltersToStudentRecordsOnly()
+    {
+        // Arrange
+        var user2 = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "stu2@t.com",
+            FirstName = "Jane",
+            LastName = "Smith"
+        };
+        _dbContext.ApplicationUsers.Add(user2);
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-002");
+        _dbContext.Students.Add(student2);
+
+        var r1 = AttendanceRecord.Create(_organizationId, _session.Id, _student.Id);
+        var r2 = AttendanceRecord.Create(_organizationId, _session.Id, student2.Id);
+        _dbContext.AttendanceRecords.AddRange(r1, r2);
+        await _dbContext.SaveChangesAsync();
+
+        _validatorMock.Setup(v => v.ResolveCallerPermissionsAsync(_studentUser.Id, _organizationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CallerPermissions(false, null, _student));
+
+        // Act
+        var result = await _service.GetPagedAsync(new AttendanceQueryParameters(), _studentUser.Id, CancellationToken.None);
+
+        // Assert
+        result.Items.Should().HaveCount(1);
+        result.Items[0].StudentId.Should().Be(_student.Id);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WhenCallerIsStudentAndRequestsDifferentStudent_ThrowsForbiddenAccessException()
+    {
+        // Arrange
+        _validatorMock.Setup(v => v.ResolveCallerPermissionsAsync(_studentUser.Id, _organizationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CallerPermissions(false, null, _student));
+
+        var query = new AttendanceQueryParameters { StudentId = Guid.NewGuid() };
+
+        // Act
+        var act = () => _service.GetPagedAsync(query, _studentUser.Id, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ForbiddenAccessException>()
+            .WithMessage("*Students can only view their own attendance records*");
+    }
+
+    #endregion
 }

@@ -29,50 +29,85 @@ public class AttendancesController : ControllerBase
 
     /// <summary>
     /// Retrieves a paginated list of attendance records with optional filtering and sorting within the current organization.
+    /// Students can only view their own attendance records.
+    /// Instructors can only view records for sessions/course groups they teach.
     /// </summary>
     [HttpGet]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize]
     [ProducesResponseType(typeof(PagedResult<AttendanceDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<PagedResult<AttendanceDto>>> GetAll(
         [FromQuery] AttendanceQueryParameters parameters,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("HTTP GET api/attendances received.");
-        var result = await _attendanceService.GetPagedAsync(parameters, cancellationToken);
+        var userId = GetCurrentUserId();
+        var result = await _attendanceService.GetPagedAsync(parameters, userId, cancellationToken);
         return Ok(result);
     }
 
     /// <summary>
     /// Retrieves an attendance record by its unique ID.
+    /// Students can only view their own attendance records.
+    /// Instructors can only view records for sessions/course groups they teach.
     /// </summary>
     [HttpGet("{id:guid}")]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize]
     [ProducesResponseType(typeof(AttendanceDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AttendanceDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         _logger.LogInformation("HTTP GET api/attendances/{Id} received.", id);
-        var result = await _attendanceService.GetByIdAsync(id, cancellationToken);
+        var userId = GetCurrentUserId();
+        var result = await _attendanceService.GetByIdAsync(id, userId, cancellationToken);
         return Ok(result);
     }
 
     /// <summary>
     /// Retrieves all attendance records for a specific session within the current organization.
+    /// Restricted to CourseStaff (OrgAdmin, SuperAdmin, and the assigned Instructor).
     /// </summary>
     [HttpGet("session/{sessionId:guid}")]
     [HttpGet("/api/sessions/{sessionId:guid}/attendance")]
     [Authorize(Policy = AppPolicies.RequireCourseStaff)]
     [ProducesResponseType(typeof(IReadOnlyList<AttendanceDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<IReadOnlyList<AttendanceDto>>> GetBySessionId(
         Guid sessionId,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("HTTP GET api/attendances/session/{SessionId} received.", sessionId);
-        var result = await _attendanceService.GetBySessionIdAsync(sessionId, cancellationToken);
+        var userId = GetCurrentUserId();
+        var result = await _attendanceService.GetBySessionIdAsync(sessionId, userId, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Calculates the attendance percentage and breakdown for a student, optionally filtered by course group.
+    /// Students can only view their own percentage.
+    /// Instructors can only view percentages for students in course groups they teach.
+    /// </summary>
+    [HttpGet("student/{studentId:guid}/percentage")]
+    [HttpGet("/api/students/{studentId:guid}/attendance/percentage")]
+    [Authorize]
+    [ProducesResponseType(typeof(AttendancePercentageDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AttendancePercentageDto>> GetPercentage(
+        Guid studentId,
+        [FromQuery] Guid? courseGroupId,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP GET api/attendances/student/{StudentId}/percentage received.", studentId);
+        var userId = GetCurrentUserId();
+        var result = await _attendanceService.GetPercentageAsync(studentId, courseGroupId, userId, cancellationToken);
         return Ok(result);
     }
 
