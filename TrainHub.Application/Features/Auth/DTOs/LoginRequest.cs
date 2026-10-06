@@ -15,6 +15,5 @@ public class LoginRequest
     [Required]
     public string Password { get; set; } = string.Empty;
 
-    [Required]
-    public Guid OrganizationId { get; set; }
+    public Guid? OrganizationId { get; set; }
 }

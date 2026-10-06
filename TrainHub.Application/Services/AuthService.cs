@@ -109,6 +109,7 @@ public class AuthService : IAuthService
         return new AuthResponse
         {
             UserId = user.Id,
+            OrganizationId = user.OrganizationId,
             Email = user.Email!,
             UserName = user.UserName!,
             FirstName = user.FirstName,
@@ -128,9 +129,35 @@ public class AuthService : IAuthService
 
         var normalizedEmail = _userManager.NormalizeEmail(request.Email);
 
-        var user = await _dbContext.ApplicationUsers
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail && u.OrganizationId == request.OrganizationId, cancellationToken);
+        ApplicationUser? user;
+        if (request.OrganizationId.HasValue && request.OrganizationId.Value != Guid.Empty)
+        {
+            user = await _dbContext.ApplicationUsers
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail && u.OrganizationId == request.OrganizationId.Value, cancellationToken);
+        }
+        else
+        {
+            var matchingUsers = await _dbContext.ApplicationUsers
+                .IgnoreQueryFilters()
+                .Where(u => u.NormalizedEmail == normalizedEmail)
+                .Take(2)
+                .ToListAsync(cancellationToken);
+
+            if (matchingUsers.Count == 0)
+            {
+                _logger.LogWarning("Login failed: User '{Email}' not found.", request.Email);
+                throw new UnauthorizedAccessException("Invalid email or password.");
+            }
+
+            if (matchingUsers.Count > 1)
+            {
+                _logger.LogWarning("Login failed: Multiple accounts found for email '{Email}' across organizations.", request.Email);
+                throw new BadRequestException("Multiple accounts found for this email. Please specify Organization ID.");
+            }
+
+            user = matchingUsers[0];
+        }
 
         if (user == null)
         {
@@ -169,6 +196,8 @@ public class AuthService : IAuthService
         return new AuthResponse
         {
             UserId = user.Id,
+            OrganizationId = user.OrganizationId,
+            OrganizationName = user.Organization?.Name,
             Email = user.Email!,
             UserName = user.UserName!,
             FirstName = user.FirstName,
@@ -223,6 +252,7 @@ public class AuthService : IAuthService
         return new AuthResponse
         {
             UserId = user.Id,
+            OrganizationId = user.OrganizationId,
             Email = user.Email!,
             UserName = user.UserName!,
             FirstName = user.FirstName,
