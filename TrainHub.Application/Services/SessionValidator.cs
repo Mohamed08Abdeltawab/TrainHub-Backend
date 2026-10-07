@@ -414,9 +414,8 @@ public class SessionValidator : ISessionValidator
             throw new ForbiddenAccessException("No active instructor profile is associated with this user.");
 
         var isGroupInstructor = courseGroup.InstructorId == instructor.Id;
-        var isSessionTarget = targetInstructorId.HasValue && targetInstructorId.Value == instructor.Id;
 
-        if (!isGroupInstructor && !isSessionTarget)
+        if (!isGroupInstructor)
         {
             _logger.LogWarning("Instructor '{InstructorId}' attempted to schedule a session for course group '{CourseGroupId}' which they do not teach.",
                 instructor.Id, courseGroup.Id);
