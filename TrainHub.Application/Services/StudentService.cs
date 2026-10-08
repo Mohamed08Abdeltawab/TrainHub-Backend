@@ -229,15 +229,15 @@ public class StudentService : IStudentService
     {
         _logger.LogInformation("Deleting student '{StudentId}'.", id);
 
-        // Enforce dependency and existence rules
-        await _studentValidator.ValidateDeleteAsync(id, cancellationToken);
-
         var student = await _dbContext.Students.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
         if (student == null)
         {
             _logger.LogWarning("Student '{StudentId}' was not found for deletion.", id);
             throw new NotFoundException("Student", id);
         }
+
+        // Enforce dependency and existence rules
+        await _studentValidator.ValidateDeleteAsync(id, cancellationToken);
 
         _dbContext.Students.Remove(student);
         await _dbContext.SaveChangesAsync(cancellationToken);

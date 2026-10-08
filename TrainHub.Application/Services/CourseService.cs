@@ -266,15 +266,15 @@ public class CourseService : ICourseService
     {
         _logger.LogInformation("Deleting course '{CourseId}'.", id);
 
-        // Enforce dependency and existence rules
-        await _courseValidator.ValidateDeleteAsync(id, cancellationToken);
-
         var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         if (course == null)
         {
             _logger.LogWarning("Course '{CourseId}' was not found for deletion.", id);
             throw new NotFoundException("Course", id);
         }
+
+        // Enforce dependency and existence rules
+        await _courseValidator.ValidateDeleteAsync(id, cancellationToken);
 
         _dbContext.Courses.Remove(course);
         await _dbContext.SaveChangesAsync(cancellationToken);

@@ -363,15 +363,15 @@ public class InstructorService : IInstructorService
     {
         _logger.LogInformation("Deleting instructor '{InstructorId}'.", id);
 
-        // Enforce dependency and existence rules
-        await _instructorValidator.ValidateDeleteAsync(id, cancellationToken);
-
         var instructor = await _dbContext.Instructors.FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
         if (instructor == null)
         {
             _logger.LogWarning("Instructor '{InstructorId}' was not found for deletion.", id);
             throw new NotFoundException("Instructor", id);
         }
+
+        // Enforce dependency and existence rules
+        await _instructorValidator.ValidateDeleteAsync(id, cancellationToken);
 
         var userId = instructor.UserId;
 
