@@ -138,7 +138,10 @@ public class AttendanceValidator : IAttendanceValidator
             throw new NotFoundException("Session", dto.SessionId);
         }
 
-        // 2. Prevent recording attendance for cancelled or draft sessions
+        // 2. Instructor authorization check
+        await ValidateInstructorAuthorizationForSessionAsync(session, currentUserId, organizationId, cancellationToken);
+
+        // 3. Prevent recording attendance for cancelled or draft sessions
         if (session.Status == SessionConstants.Statuses.Cancelled)
         {
             _logger.LogWarning("Validation failed: Attempted to record attendance for cancelled session '{SessionId}'.", dto.SessionId);
@@ -151,14 +154,14 @@ public class AttendanceValidator : IAttendanceValidator
             throw new ConflictException("Cannot record attendance for a draft session.");
         }
 
-        // 3. Prevent recording attendance if the session's course group is cancelled
+        // 4. Prevent recording attendance if the session's course group is cancelled
         if (session.CourseGroup != null && session.CourseGroup.Status == CourseGroupConstants.Statuses.Cancelled)
         {
             _logger.LogWarning("Validation failed: Attempted to record attendance for session in cancelled course group '{CourseGroupId}'.", session.CourseGroupId);
             throw new ConflictException("Cannot record attendance for a session in a cancelled course group.");
         }
 
-        // 4. Verify Student exists within the current organization
+        // 5. Verify Student exists within the current organization
         var student = await _dbContext.Students
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(s => s.Id == dto.StudentId && s.OrganizationId == organizationId, cancellationToken);
@@ -170,7 +173,7 @@ public class AttendanceValidator : IAttendanceValidator
             throw new NotFoundException("Student", dto.StudentId);
         }
 
-        // 5. Verify Student user account is active
+        // 6. Verify Student user account is active
         var studentUser = await _dbContext.ApplicationUsers
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Id == student.UserId, cancellationToken);
@@ -181,7 +184,7 @@ public class AttendanceValidator : IAttendanceValidator
             throw new ConflictException("Cannot record attendance for a student whose user account is inactive.");
         }
 
-        // 6. Verify Student is actively enrolled in the session's CourseGroup
+        // 7. Verify Student is actively enrolled in the session's CourseGroup
         var enrollment = await _dbContext.Enrollments
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(e => e.CourseGroupId == session.CourseGroupId && e.StudentId == dto.StudentId && e.OrganizationId == organizationId, cancellationToken);
@@ -207,7 +210,7 @@ public class AttendanceValidator : IAttendanceValidator
             throw new ConflictException("Cannot record attendance for a student whose enrollment is pending.");
         }
 
-        // 7. Prevent duplicate attendance records for the same Student and Session
+        // 8. Prevent duplicate attendance records for the same Student and Session
         var duplicateExists = await _dbContext.AttendanceRecords
             .IgnoreQueryFilters()
             .AnyAsync(a => a.SessionId == dto.SessionId && a.StudentId == dto.StudentId && a.OrganizationId == organizationId, cancellationToken);
@@ -218,9 +221,6 @@ public class AttendanceValidator : IAttendanceValidator
                 dto.StudentId, dto.SessionId);
             throw new ConflictException("An attendance record already exists for this student in this session.");
         }
-
-        // 8. Instructor authorization check
-        await ValidateInstructorAuthorizationForSessionAsync(session, currentUserId, organizationId, cancellationToken);
     }
 
     public async Task ValidateUpdateAsync(Guid id, UpdateAttendanceDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
@@ -254,21 +254,24 @@ public class AttendanceValidator : IAttendanceValidator
             throw new NotFoundException("AttendanceRecord", id);
         }
 
-        // 2. Prevent updating attendance for cancelled sessions
+        // 2. Instructor authorization check
+        await ValidateInstructorAuthorizationForSessionAsync(record.Session, currentUserId, organizationId, cancellationToken);
+
+        // 3. Prevent updating attendance for cancelled sessions
         if (record.Session.Status == SessionConstants.Statuses.Cancelled)
         {
             _logger.LogWarning("Validation failed: Attempted to update attendance for cancelled session '{SessionId}'.", record.SessionId);
             throw new ConflictException("Cannot update attendance for a cancelled session.");
         }
 
-        // 3. Prevent updating attendance if course group is cancelled
+        // 4. Prevent updating attendance if course group is cancelled
         if (record.Session.CourseGroup != null && record.Session.CourseGroup.Status == CourseGroupConstants.Statuses.Cancelled)
         {
             _logger.LogWarning("Validation failed: Attempted to update attendance for cancelled course group '{CourseGroupId}'.", record.Session.CourseGroupId);
             throw new ConflictException("Cannot update attendance for a session in a cancelled course group.");
         }
 
-        // 4. Prevent updating attendance for a student whose enrollment is cancelled
+        // 5. Prevent updating attendance for a student whose enrollment is cancelled
         var enrollment = await _dbContext.Enrollments
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(e => e.CourseGroupId == record.Session.CourseGroupId && e.StudentId == record.StudentId && e.OrganizationId == organizationId, cancellationToken);
@@ -279,9 +282,6 @@ public class AttendanceValidator : IAttendanceValidator
                 record.StudentId, record.Session.CourseGroupId);
             throw new ConflictException("Cannot update attendance for a student whose enrollment is cancelled.");
         }
-
-        // 5. Instructor authorization check
-        await ValidateInstructorAuthorizationForSessionAsync(record.Session, currentUserId, organizationId, cancellationToken);
     }
 
     public async Task ValidateUpdateStatusAsync(Guid id, byte status, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
@@ -306,21 +306,24 @@ public class AttendanceValidator : IAttendanceValidator
             throw new NotFoundException("AttendanceRecord", id);
         }
 
-        // 2. Prevent updating attendance status for cancelled sessions
+        // 2. Instructor authorization check
+        await ValidateInstructorAuthorizationForSessionAsync(record.Session, currentUserId, organizationId, cancellationToken);
+
+        // 3. Prevent updating attendance status for cancelled sessions
         if (record.Session.Status == SessionConstants.Statuses.Cancelled)
         {
             _logger.LogWarning("Validation failed: Attempted to update status for cancelled session '{SessionId}'.", record.SessionId);
             throw new ConflictException("Cannot update attendance status for a cancelled session.");
         }
 
-        // 3. Prevent updating status if course group is cancelled
+        // 4. Prevent updating status if course group is cancelled
         if (record.Session.CourseGroup != null && record.Session.CourseGroup.Status == CourseGroupConstants.Statuses.Cancelled)
         {
             _logger.LogWarning("Validation failed: Attempted to update attendance status for cancelled course group '{CourseGroupId}'.", record.Session.CourseGroupId);
             throw new ConflictException("Cannot update attendance status for a session in a cancelled course group.");
         }
 
-        // 4. Prevent updating attendance status for a student whose enrollment is cancelled
+        // 5. Prevent updating attendance status for a student whose enrollment is cancelled
         var enrollment = await _dbContext.Enrollments
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(e => e.CourseGroupId == record.Session.CourseGroupId && e.StudentId == record.StudentId && e.OrganizationId == organizationId, cancellationToken);
@@ -331,9 +334,6 @@ public class AttendanceValidator : IAttendanceValidator
                 record.StudentId, record.Session.CourseGroupId);
             throw new ConflictException("Cannot update attendance status for a student whose enrollment is cancelled.");
         }
-
-        // 5. Instructor authorization check
-        await ValidateInstructorAuthorizationForSessionAsync(record.Session, currentUserId, organizationId, cancellationToken);
     }
 
     public async Task ValidateDeleteAsync(Guid id, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
@@ -351,15 +351,15 @@ public class AttendanceValidator : IAttendanceValidator
             throw new NotFoundException("AttendanceRecord", id);
         }
 
-        // 2. Prevent deleting attendance for cancelled sessions
+        // 2. Instructor authorization check
+        await ValidateInstructorAuthorizationForSessionAsync(record.Session, currentUserId, organizationId, cancellationToken);
+
+        // 3. Prevent deleting attendance for cancelled sessions
         if (record.Session.Status == SessionConstants.Statuses.Cancelled)
         {
             _logger.LogWarning("Validation failed: Attempted to delete attendance for cancelled session '{SessionId}'.", record.SessionId);
             throw new ConflictException("Cannot delete attendance for a cancelled session.");
         }
-
-        // 3. Instructor authorization check
-        await ValidateInstructorAuthorizationForSessionAsync(record.Session, currentUserId, organizationId, cancellationToken);
     }
 
     public async Task ValidateGetByIdAsync(Guid id, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
@@ -475,11 +475,77 @@ public class AttendanceValidator : IAttendanceValidator
             throw new NotFoundException("Student", studentId);
         }
 
-        // 2. If courseGroupId is provided, verify it exists in organization and student is enrolled
-        CourseGroup? courseGroup = null;
+        // 2. Caller authorization check
+        if (currentUserId.HasValue)
+        {
+            var caller = await ResolveCallerPermissionsAsync(currentUserId.Value, organizationId, cancellationToken);
+            if (!caller.IsOrgStaff)
+            {
+                if (caller.Student != null)
+                {
+                    if (student.Id != caller.Student.Id)
+                    {
+                        _logger.LogWarning("Student '{StudentId}' attempted to view attendance percentage of student '{TargetStudentId}'.",
+                            caller.Student.Id, studentId);
+                        throw new ForbiddenAccessException("Students can only view their own attendance data.");
+                    }
+                }
+                else if (caller.Instructor != null)
+                {
+                    if (courseGroupId.HasValue)
+                    {
+                        var group = await _dbContext.CourseGroups
+                            .IgnoreQueryFilters()
+                            .FirstOrDefaultAsync(cg => cg.Id == courseGroupId.Value && cg.OrganizationId == organizationId, cancellationToken);
+
+                        if (group == null)
+                        {
+                            _logger.LogWarning("Validation failed: Course group '{CourseGroupId}' not found in organization '{OrganizationId}'.", courseGroupId.Value, organizationId);
+                            throw new NotFoundException("CourseGroup", courseGroupId.Value);
+                        }
+
+                        var isGroupInstructor = group.InstructorId == caller.Instructor.Id;
+                        var teachesSessionInGroup = await _dbContext.Sessions
+                            .IgnoreQueryFilters()
+                            .AnyAsync(s => s.CourseGroupId == courseGroupId.Value && s.InstructorId == caller.Instructor.Id, cancellationToken);
+
+                        if (!isGroupInstructor && !teachesSessionInGroup)
+                        {
+                            _logger.LogWarning("Instructor '{InstructorId}' attempted to view student percentage for course group '{CourseGroupId}' which they do not teach.",
+                                caller.Instructor.Id, courseGroupId.Value);
+                            throw new ForbiddenAccessException("You are not authorized to view attendance data for this course group.");
+                        }
+                    }
+                    else
+                    {
+                        // Instructor must teach at least one course group or session in which the student is enrolled
+                        var teachesStudent = await _dbContext.Enrollments
+                            .IgnoreQueryFilters()
+                            .Include(e => e.CourseGroup)
+                            .AnyAsync(e => e.StudentId == studentId && e.OrganizationId == organizationId &&
+                                (e.CourseGroup.InstructorId == caller.Instructor.Id ||
+                                 _dbContext.Sessions.Any(s => s.CourseGroupId == e.CourseGroupId && s.InstructorId == caller.Instructor.Id)),
+                                cancellationToken);
+
+                        if (!teachesStudent)
+                        {
+                            _logger.LogWarning("Instructor '{InstructorId}' attempted to view attendance percentage for student '{StudentId}' whom they do not teach.",
+                                caller.Instructor.Id, studentId);
+                            throw new ForbiddenAccessException("You are not authorized to view attendance data for this student.");
+                        }
+                    }
+                }
+                else
+                {
+                    throw new ForbiddenAccessException("You are not authorized to view attendance data for this student.");
+                }
+            }
+        }
+
+        // 3. If courseGroupId is provided, verify it exists in organization and student is enrolled
         if (courseGroupId.HasValue)
         {
-            courseGroup = await _dbContext.CourseGroups
+            var courseGroup = await _dbContext.CourseGroups
                 .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(cg => cg.Id == courseGroupId.Value && cg.OrganizationId == organizationId, cancellationToken);
 
@@ -499,67 +565,6 @@ public class AttendanceValidator : IAttendanceValidator
                 throw new ConflictException("Student is not enrolled in the specified course group.");
             }
         }
-
-        if (!currentUserId.HasValue)
-        {
-            return;
-        }
-
-        var caller = await ResolveCallerPermissionsAsync(currentUserId.Value, organizationId, cancellationToken);
-        if (caller.IsOrgStaff)
-        {
-            return;
-        }
-
-        if (caller.Student != null)
-        {
-            if (student.Id != caller.Student.Id)
-            {
-                _logger.LogWarning("Student '{StudentId}' attempted to view attendance percentage of student '{TargetStudentId}'.",
-                    caller.Student.Id, studentId);
-                throw new ForbiddenAccessException("Students can only view their own attendance data.");
-            }
-            return;
-        }
-
-        if (caller.Instructor != null)
-        {
-            if (courseGroupId.HasValue)
-            {
-                var isGroupInstructor = courseGroup != null && courseGroup.InstructorId == caller.Instructor.Id;
-                var teachesSessionInGroup = await _dbContext.Sessions
-                    .IgnoreQueryFilters()
-                    .AnyAsync(s => s.CourseGroupId == courseGroupId.Value && s.InstructorId == caller.Instructor.Id, cancellationToken);
-
-                if (!isGroupInstructor && !teachesSessionInGroup)
-                {
-                    _logger.LogWarning("Instructor '{InstructorId}' attempted to view student percentage for course group '{CourseGroupId}' which they do not teach.",
-                        caller.Instructor.Id, courseGroupId.Value);
-                    throw new ForbiddenAccessException("You are not authorized to view attendance data for this course group.");
-                }
-            }
-            else
-            {
-                // Instructor must teach at least one course group or session in which the student is enrolled
-                var teachesStudent = await _dbContext.Enrollments
-                    .IgnoreQueryFilters()
-                    .Include(e => e.CourseGroup)
-                    .AnyAsync(e => e.StudentId == studentId && e.OrganizationId == organizationId &&
-                        (e.CourseGroup.InstructorId == caller.Instructor.Id ||
-                         _dbContext.Sessions.Any(s => s.CourseGroupId == e.CourseGroupId && s.InstructorId == caller.Instructor.Id)),
-                        cancellationToken);
-
-                if (!teachesStudent)
-                {
-                    _logger.LogWarning("Instructor '{InstructorId}' attempted to view attendance percentage for student '{StudentId}' whom they do not teach.",
-                        caller.Instructor.Id, studentId);
-                    throw new ForbiddenAccessException("You are not authorized to view attendance data for this student.");
-                }
-            }
-            return;
-        }
-
-        throw new ForbiddenAccessException("You are not authorized to view attendance data for this student.");
     }
 
     #region Helper Methods
