@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using TrainHub.Api.Middleware;
 using TrainHub.Application;
 using TrainHub.Application.Interfaces;
@@ -51,7 +52,27 @@ builder.Services.AddCors(options =>
 });
 
 // ── API Services ────────────────────────────────────────────────
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var problemDetails = new ValidationProblemDetails(context.ModelState)
+            {
+                Type = "https://tools.ietf.org/html/rfc7231#section-6.5.1",
+                Title = "One or more validation errors occurred.",
+                Status = StatusCodes.Status400BadRequest,
+                Detail = "Please refer to the errors property for additional details.",
+                Instance = $"{context.HttpContext.Request.Method} {context.HttpContext.Request.Path}"
+            };
+            problemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+
+            return new BadRequestObjectResult(problemDetails)
+            {
+                ContentTypes = { "application/problem+json" }
+            };
+        };
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi(options =>
 {
@@ -100,12 +121,26 @@ using (var scope = app.Services.CreateScope())
 // ── HTTP Pipeline ─────────────────Before any thing────────────
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+// ── Security Headers ────────────────────────────────────────────
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["X-XSS-Protection"] = "0";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+    context.Response.Headers["X-Permitted-Cross-Domain-Policies"] = "none";
+
+    await next();
+});
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 else
 {
+    app.UseHsts();
     app.UseHttpsRedirection();
 }
 

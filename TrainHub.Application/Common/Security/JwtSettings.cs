@@ -31,4 +31,9 @@ public class JwtSettings
     /// Refresh token validity duration in days. Defaults to 7 days.
     /// </summary>
     public int RefreshTokenExpiryDays { get; set; } = 7;
+
+    /// <summary>
+    /// Gets or sets whether HTTPS metadata is required for JWT authority. Defaults to false in dev.
+    /// </summary>
+    public bool RequireHttpsMetadata { get; set; } = false;
 }
