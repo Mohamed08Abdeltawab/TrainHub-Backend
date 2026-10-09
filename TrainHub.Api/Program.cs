@@ -39,12 +39,19 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(
-                  "http://localhost:5173",
-                  "http://localhost:5174",
-                  "http://localhost:3000",
-                  "http://127.0.0.1:5173",
-                  "http://127.0.0.1:5174")
+        var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+        var allowedOrigins = (configuredOrigins != null && configuredOrigins.Length > 0)
+            ? configuredOrigins
+            : new[]
+            {
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000",
+                "http://127.0.0.1:5173",
+                "http://127.0.0.1:5174"
+            };
+
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -78,6 +85,13 @@ builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
     {
+        document.Info = new Microsoft.OpenApi.OpenApiInfo
+        {
+            Title = "TrainHub Management API",
+            Version = "v1",
+            Description = "Multi-tenant RESTful API for TrainHub Training Center Management SaaS platform, covering authentication, organization governance, course groups, sessions, student enrollments, and attendance tracking."
+        };
+
         document.Components ??= new Microsoft.OpenApi.OpenApiComponents();
         document.Components.SecuritySchemes ??= new Dictionary<string, Microsoft.OpenApi.IOpenApiSecurityScheme>();
         document.Components.SecuritySchemes["Bearer"] = new Microsoft.OpenApi.OpenApiSecurityScheme
@@ -100,6 +114,18 @@ builder.Services.AddOpenApi(options =>
         return Task.CompletedTask;
     });
 });
+
+// ── Production Environment Validation ──────────────────────────
+if (!builder.Environment.IsDevelopment())
+{
+    var jwtSecret = builder.Configuration["JwtSettings:Secret"] ?? builder.Configuration["Jwt:Secret"];
+    if (string.Equals(jwtSecret, "TrainHub_Super_Secret_Key_For_Jwt_Signing_Must_Be_At_Least_32_Bytes_Long!", StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException(
+            "Insecure configuration: Development dummy JWT Secret cannot be used in a Production environment. " +
+            "Please set a secure 'JwtSettings__Secret' environment variable.");
+    }
+}
 
 var app = builder.Build();
 
