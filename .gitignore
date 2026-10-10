@@ -38,6 +38,9 @@ appsettings.Local.json
 .idea/
 *.sln.iml
 
+## Dotnet tooling
+.tools/
+
 ## Dotnet EF migrations & tooling artifacts
 *.userprefs
 *.dbmdl
