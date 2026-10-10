@@ -6,6 +6,9 @@ using TrainHub.Domain.Constants;
 
 namespace TrainHub.Api.Controllers;
 
+/// <summary>
+/// Manages system roles and user role assignments. Restricted to platform SuperAdmin.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Policy = AppPolicies.RequireSuperAdmin)]
