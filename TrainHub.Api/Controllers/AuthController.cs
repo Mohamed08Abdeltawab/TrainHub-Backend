@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TrainHub.Application.Features.Auth.DTOs;
 using TrainHub.Application.Interfaces;
@@ -61,14 +63,30 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Logs out a user by revoking their refresh token.
+    /// Logs out the authenticated user by revoking their refresh token.
+    /// Identity is extracted strictly from claims, preventing IDOR.
     /// </summary>
     [HttpPost("logout")]
+    [Authorize]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Logout([FromBody] LogoutRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Logout([FromBody] LogoutRequest? request, CancellationToken cancellationToken)
     {
+        request ??= new LogoutRequest();
+        var idClaim = User != null
+            ? (User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"))
+            : null;
+
+        if (Guid.TryParse(idClaim, out var parsedId))
+        {
+            request.UserId = parsedId;
+        }
+        else if (request.UserId == null || request.UserId == Guid.Empty)
+        {
+            return Unauthorized();
+        }
+
         _logger.LogInformation("HTTP POST api/auth/logout received for user '{UserId}'.", request.UserId);
         await _authService.LogoutAsync(request, cancellationToken);
         return Ok(new { message = "Logged out successfully." });

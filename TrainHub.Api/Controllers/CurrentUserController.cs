@@ -44,4 +44,30 @@ public class CurrentUserController : ControllerBase
         var response = await _currentUserService.GetCurrentUserAsync(userId, cancellationToken);
         return Ok(response);
     }
+
+    /// <summary>
+    /// Updates profile information for the currently authenticated user.
+    /// User ID is extracted securely from JWT claims to prevent IDOR vulnerabilities.
+    /// </summary>
+    [HttpPut]
+    [ProducesResponseType(typeof(CurrentUserResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CurrentUserResponse>> UpdateCurrentUser(
+        [FromBody] UpdateCurrentUserDto dto,
+        CancellationToken cancellationToken)
+    {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            _logger.LogWarning("HTTP PUT api/currentuser received but no valid user ID found in token claims.");
+            return Unauthorized();
+        }
+
+        _logger.LogInformation("HTTP PUT api/currentuser received for user '{UserId}'.", userId);
+        var response = await _currentUserService.UpdateProfileAsync(userId, dto, cancellationToken);
+        return Ok(response);
+    }
 }

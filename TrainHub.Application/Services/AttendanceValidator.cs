@@ -467,7 +467,7 @@ public class AttendanceValidator : IAttendanceValidator
         // 1. Student must exist in organization
         var student = await _dbContext.Students
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(s => s.Id == studentId && s.OrganizationId == organizationId, cancellationToken);
+            .FirstOrDefaultAsync(s => (s.Id == studentId || s.UserId == studentId) && s.OrganizationId == organizationId, cancellationToken);
 
         if (student == null)
         {
@@ -483,7 +483,7 @@ public class AttendanceValidator : IAttendanceValidator
             {
                 if (caller.Student != null)
                 {
-                    if (student.Id != caller.Student.Id)
+                    if (student.Id != caller.Student.Id && student.UserId != caller.Student.UserId)
                     {
                         _logger.LogWarning("Student '{StudentId}' attempted to view attendance percentage of student '{TargetStudentId}'.",
                             caller.Student.Id, studentId);

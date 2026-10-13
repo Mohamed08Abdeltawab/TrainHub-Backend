@@ -32,4 +32,10 @@ public interface IDashboardService
     /// Retrieves attendance and session statistics, optionally filtered by course group, for the current organization.
     /// </summary>
     Task<AttendanceStatisticsDto> GetAttendanceStatisticsAsync(Guid? courseGroupId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves role-aware dashboard content matching the React SPA presentation model.
+    /// Role and identity are resolved securely from caller JWT claims.
+    /// </summary>
+    Task<DashboardContentDto> GetDashboardContentAsync(CancellationToken cancellationToken = default);
 }

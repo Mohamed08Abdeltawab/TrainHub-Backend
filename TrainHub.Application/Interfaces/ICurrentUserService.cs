@@ -14,4 +14,9 @@ public interface ICurrentUserService
     /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
     /// <returns>A <see cref="CurrentUserResponse"/> containing the user's profile data.</returns>
     Task<CurrentUserResponse> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates personal profile information for the authenticated user.
+    /// </summary>
+    Task<CurrentUserResponse> UpdateProfileAsync(Guid userId, UpdateCurrentUserDto dto, CancellationToken cancellationToken = default);
 }

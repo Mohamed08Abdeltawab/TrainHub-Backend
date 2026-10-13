@@ -7,9 +7,7 @@ namespace TrainHub.Application.Features.Auth.DTOs;
 /// </summary>
 public class LogoutRequest
 {
-    [Required]
-    public Guid UserId { get; set; }
+    public Guid? UserId { get; set; }
 
-    [Required]
-    public string RefreshToken { get; set; } = string.Empty;
+    public string? RefreshToken { get; set; }
 }

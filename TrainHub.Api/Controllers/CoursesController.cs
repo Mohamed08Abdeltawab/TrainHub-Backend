@@ -28,7 +28,7 @@ public class CoursesController : ControllerBase
     /// Retrieves a paginated list of courses with optional search, filtering, and sorting within the current organization.
     /// </summary>
     [HttpGet]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize]
     [ProducesResponseType(typeof(PagedResult<CourseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
@@ -45,7 +45,7 @@ public class CoursesController : ControllerBase
     /// Retrieves distinct course categories for the current organization.
     /// </summary>
     [HttpGet("categories")]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize]
     [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<string>>> GetCategories(CancellationToken cancellationToken)
     {
@@ -58,7 +58,7 @@ public class CoursesController : ControllerBase
     /// Retrieves a course by its unique ID.
     /// </summary>
     [HttpGet("{id:guid}")]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize]
     [ProducesResponseType(typeof(CourseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CourseDto>> GetById(Guid id, CancellationToken cancellationToken)

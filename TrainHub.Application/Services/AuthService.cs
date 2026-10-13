@@ -106,10 +106,15 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("Registration completed successfully for user '{UserId}'.", user.Id);
 
+        var org = await _dbContext.Organizations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == user.OrganizationId, cancellationToken);
+
         return new AuthResponse
         {
             UserId = user.Id,
             OrganizationId = user.OrganizationId,
+            OrganizationName = org?.Name,
             Email = user.Email!,
             UserName = user.UserName!,
             FirstName = user.FirstName,
@@ -193,11 +198,16 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("Login successful for user '{UserId}'.", user.Id);
 
+        var org = await _dbContext.Organizations
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == user.OrganizationId, cancellationToken);
+
         return new AuthResponse
         {
             UserId = user.Id,
             OrganizationId = user.OrganizationId,
-            OrganizationName = user.Organization?.Name,
+            OrganizationName = org?.Name,
             Email = user.Email!,
             UserName = user.UserName!,
             FirstName = user.FirstName,
@@ -249,10 +259,16 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("Refresh token successful for user '{UserId}'.", user.Id);
 
+        var org = await _dbContext.Organizations
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == user.OrganizationId, cancellationToken);
+
         return new AuthResponse
         {
             UserId = user.Id,
             OrganizationId = user.OrganizationId,
+            OrganizationName = org?.Name,
             Email = user.Email!,
             UserName = user.UserName!,
             FirstName = user.FirstName,
@@ -267,28 +283,29 @@ public class AuthService : IAuthService
 
     public async Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Logout attempt for user '{UserId}'.", request.UserId);
+        var targetUserId = request.UserId ?? Guid.Empty;
+        _logger.LogInformation("Logout attempt for user '{UserId}'.", targetUserId);
 
-        var user = await _userManager.FindByIdAsync(request.UserId.ToString());
+        var user = await _userManager.FindByIdAsync(targetUserId.ToString());
 
         if (user == null)
         {
-            _logger.LogWarning("Logout failed: User '{UserId}' not found.", request.UserId);
+            _logger.LogWarning("Logout failed: User '{UserId}' not found.", targetUserId);
             return;
         }
 
-        // Only revoke if the provided refresh token matches the current one in the database
-        if (user.RefreshToken == request.RefreshToken)
+        // Only revoke if the provided refresh token matches the current one in the database (or if not provided)
+        if (string.IsNullOrEmpty(request.RefreshToken) || user.RefreshToken == request.RefreshToken)
         {
             user.RefreshToken = null;
             user.RefreshTokenExpiryTime = DateTime.UtcNow;
 
             await _userManager.UpdateAsync(user);
-            _logger.LogInformation("Logout successful for user '{UserId}'. Refresh token revoked.", request.UserId);
+            _logger.LogInformation("Logout successful for user '{UserId}'. Refresh token revoked.", targetUserId);
         }
         else
         {
-            _logger.LogWarning("Logout failed for user '{UserId}': Mismatched refresh token.", request.UserId);
+            _logger.LogWarning("Logout failed for user '{UserId}': Mismatched refresh token.", targetUserId);
             throw new UnauthorizedAccessException("Invalid refresh token.");
         }
     }

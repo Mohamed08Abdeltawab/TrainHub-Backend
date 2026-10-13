@@ -32,6 +32,7 @@ public class OrganizationService : IOrganizationService
 
         var organization = await _dbContext.Organizations
             .IgnoreQueryFilters()
+            .AsNoTracking()
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
         if (organization == null)
         {
@@ -48,6 +49,8 @@ public class OrganizationService : IOrganizationService
 
         var organizations = await _dbContext.Organizations
             .IgnoreQueryFilters()
+            .AsNoTracking()
+            .OrderBy(o => o.Name)
             .ToListAsync(cancellationToken);
         return organizations.Select(MapToDto).ToList();
     }

@@ -1,4 +1,6 @@
 using TrainHub.Application.Common.Models;
+using TrainHub.Application.Features.CourseGroups.DTOs;
+using TrainHub.Application.Features.Sessions.DTOs;
 using TrainHub.Application.Features.Students.DTOs;
 
 namespace TrainHub.Application.Interfaces;
@@ -19,4 +21,12 @@ public interface IStudentService
     Task<StudentDto> UpdateAsync(Guid id, UpdateStudentDto dto, CancellationToken cancellationToken = default);
 
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<StudentDto> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<StudentCourseDto>> GetMyCoursesAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<CourseGroupDto>> GetMyCohortsAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<SessionDto>> GetMySessionsAsync(Guid userId, CancellationToken cancellationToken = default);
 }

@@ -42,7 +42,6 @@ public class DashboardControllerTests
             .Cast<AuthorizeAttribute>()
             .FirstOrDefault();
         authAttr.Should().NotBeNull();
-        authAttr!.Policy.Should().Be(AppPolicies.RequireOrgStaff);
     }
 
     [Fact]
@@ -205,6 +204,7 @@ public class DashboardControllerTests
     }
 
     [Theory]
+    [InlineData(nameof(DashboardController.GetDashboardContent), "content", typeof(DashboardContentDto))]
     [InlineData(nameof(DashboardController.GetSummary), null, typeof(DashboardSummaryDto))]
     [InlineData(nameof(DashboardController.GetStudentStatistics), "students", typeof(StudentStatisticsDto))]
     [InlineData(nameof(DashboardController.GetCourseStatistics), "courses", typeof(CourseStatisticsDto))]
@@ -226,5 +226,31 @@ public class DashboardControllerTests
             .FirstOrDefault(a => a.StatusCode == 200);
         produces200.Should().NotBeNull();
         produces200!.Type.Should().Be(expectedResponseType);
+    }
+
+    [Fact]
+    public async Task GetDashboardContent_ReturnsOkResultWithDashboardContent()
+    {
+        // Arrange
+        var expectedContent = new DashboardContentDto
+        {
+            Tenant = "Test Tenant",
+            Plan = "Standard",
+            Section = "Overview",
+            Title = "Overview Title",
+            Description = "Overview Desc"
+        };
+
+        _dashboardServiceMock.Setup(s => s.GetDashboardContentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedContent);
+
+        // Act
+        var result = await _controller.GetDashboardContent(CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(expectedContent);
     }
 }

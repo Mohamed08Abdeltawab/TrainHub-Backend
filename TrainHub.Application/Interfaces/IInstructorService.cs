@@ -31,4 +31,12 @@ public interface IInstructorService
     Task<InstructorDto> UpdateCurrentInstructorAsync(Guid currentUserId, UpdateInstructorDto dto, CancellationToken cancellationToken = default);
 
     Task<InstructorDto> UpdateCurrentInstructorProfileAsync(Guid currentUserId, UpdateInstructorProfileDto dto, CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<InstructorCourseDto>> GetMyCoursesAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<InstructorCohortDto>> GetMyCohortsAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<InstructorSessionDto>> GetMySessionsAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<InstructorStudentDto>> GetMyStudentsAsync(Guid userId, CancellationToken cancellationToken = default);
 }

@@ -244,7 +244,7 @@ public class AttendanceService : IAttendanceService
         var student = await _dbContext.Students
             .AsNoTracking()
             .Include(s => s.User)
-            .FirstOrDefaultAsync(s => s.Id == studentId && s.OrganizationId == organizationId.Value, cancellationToken);
+            .FirstOrDefaultAsync(s => (s.Id == studentId || s.UserId == studentId) && s.OrganizationId == organizationId.Value, cancellationToken);
 
         if (student == null)
         {
@@ -261,7 +261,7 @@ public class AttendanceService : IAttendanceService
 
         var query = _dbContext.AttendanceRecords
             .AsNoTracking()
-            .Where(a => a.StudentId == studentId && a.OrganizationId == organizationId.Value);
+            .Where(a => a.StudentId == student.Id && a.OrganizationId == organizationId.Value);
 
         if (courseGroupId.HasValue)
         {

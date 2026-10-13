@@ -101,6 +101,90 @@ public class InstructorsController : ControllerBase
     }
 
     /// <summary>
+    /// Retrieves courses assigned to the authenticated instructor.
+    /// </summary>
+    [HttpGet("me/courses")]
+    [Authorize(Policy = AppPolicies.RequireInstructor)]
+    [ProducesResponseType(typeof(IEnumerable<InstructorCourseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IEnumerable<InstructorCourseDto>>> GetMyCourses(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (!userId.HasValue)
+        {
+            _logger.LogWarning("HTTP GET api/instructors/me/courses received but no valid user ID found in claims.");
+            return Unauthorized();
+        }
+
+        _logger.LogInformation("HTTP GET api/instructors/me/courses received for user '{UserId}'.", userId.Value);
+        var result = await _instructorService.GetMyCoursesAsync(userId.Value, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Retrieves cohorts assigned to the authenticated instructor.
+    /// </summary>
+    [HttpGet("me/cohorts")]
+    [Authorize(Policy = AppPolicies.RequireInstructor)]
+    [ProducesResponseType(typeof(IEnumerable<InstructorCohortDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IEnumerable<InstructorCohortDto>>> GetMyCohorts(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (!userId.HasValue)
+        {
+            _logger.LogWarning("HTTP GET api/instructors/me/cohorts received but no valid user ID found in claims.");
+            return Unauthorized();
+        }
+
+        _logger.LogInformation("HTTP GET api/instructors/me/cohorts received for user '{UserId}'.", userId.Value);
+        var result = await _instructorService.GetMyCohortsAsync(userId.Value, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Retrieves teaching sessions scheduled for the authenticated instructor.
+    /// </summary>
+    [HttpGet("me/sessions")]
+    [Authorize(Policy = AppPolicies.RequireInstructor)]
+    [ProducesResponseType(typeof(IEnumerable<InstructorSessionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IEnumerable<InstructorSessionDto>>> GetMySessions(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (!userId.HasValue)
+        {
+            _logger.LogWarning("HTTP GET api/instructors/me/sessions received but no valid user ID found in claims.");
+            return Unauthorized();
+        }
+
+        _logger.LogInformation("HTTP GET api/instructors/me/sessions received for user '{UserId}'.", userId.Value);
+        var result = await _instructorService.GetMySessionsAsync(userId.Value, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Retrieves students enrolled in cohorts taught by the authenticated instructor.
+    /// </summary>
+    [HttpGet("me/students")]
+    [Authorize(Policy = AppPolicies.RequireInstructor)]
+    [ProducesResponseType(typeof(IEnumerable<InstructorStudentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IEnumerable<InstructorStudentDto>>> GetMyStudents(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (!userId.HasValue)
+        {
+            _logger.LogWarning("HTTP GET api/instructors/me/students received but no valid user ID found in claims.");
+            return Unauthorized();
+        }
+
+        _logger.LogInformation("HTTP GET api/instructors/me/students received for user '{UserId}'.", userId.Value);
+        var result = await _instructorService.GetMyStudentsAsync(userId.Value, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Retrieves an instructor by their unique ID within the current organization.
     /// Restricted to CenterAdmin (OrgAdmin) and SuperAdmin.
     /// </summary>

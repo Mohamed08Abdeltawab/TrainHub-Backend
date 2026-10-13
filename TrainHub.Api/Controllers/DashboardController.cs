@@ -11,7 +11,7 @@ namespace TrainHub.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Policy = AppPolicies.RequireOrgStaff)]
+[Authorize]
 public class DashboardController : ControllerBase
 {
     private readonly IDashboardService _dashboardService;
@@ -24,9 +24,25 @@ public class DashboardController : ControllerBase
     }
 
     /// <summary>
+    /// Role-aware dashboard payload. Authorization is resolved from JWT claims.
+    /// </summary>
+    [HttpGet("content")]
+    [Authorize]
+    [ProducesResponseType(typeof(DashboardContentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<DashboardContentDto>> GetDashboardContent(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP GET api/dashboard/content received.");
+        var result = await _dashboardService.GetDashboardContentAsync(cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Retrieves a comprehensive dashboard summary containing student, course, instructor, and attendance statistics for the current organization.
     /// </summary>
     [HttpGet]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(DashboardSummaryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -42,6 +58,7 @@ public class DashboardController : ControllerBase
     /// Retrieves student metrics including total, active, inactive, and enrollment breakdowns for the current organization.
     /// </summary>
     [HttpGet("students")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(StudentStatisticsDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -57,6 +74,7 @@ public class DashboardController : ControllerBase
     /// Retrieves course metrics including status breakdowns for courses and cohorts for the current organization.
     /// </summary>
     [HttpGet("courses")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(CourseStatisticsDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -72,6 +90,7 @@ public class DashboardController : ControllerBase
     /// Retrieves instructor metrics including active, inactive, and teaching assignment metrics for the current organization.
     /// </summary>
     [HttpGet("instructors")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(InstructorStatisticsDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -87,6 +106,7 @@ public class DashboardController : ControllerBase
     /// Retrieves attendance and session metrics, optionally filtered by course group, for the current organization.
     /// </summary>
     [HttpGet("attendance")]
+    [Authorize(Policy = AppPolicies.RequireOrgStaff)]
     [ProducesResponseType(typeof(AttendanceStatisticsDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]

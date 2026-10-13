@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using TrainHub.Api.Middleware;
 using TrainHub.Application;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
 using TrainHub.Infrastructure;
+using TrainHub.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -129,18 +131,28 @@ if (!builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// ── Seed Default System Roles on Startup ────────────────────────
+// ── Apply Migrations & Seed Default System Roles & Demo Data ────
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
+        var dbContext = scope.ServiceProvider.GetRequiredService<TrainHubDbContext>();
+        if (dbContext.Database.IsRelational())
+        {
+            logger.LogInformation("Applying pending database migrations...");
+            await dbContext.Database.MigrateAsync();
+        }
+
         var roleSeeder = scope.ServiceProvider.GetRequiredService<IRoleSeeder>();
         await roleSeeder.SeedAsync();
+
+        var demoSeeder = scope.ServiceProvider.GetRequiredService<IDemoDataSeeder>();
+        await demoSeeder.SeedAsync();
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred while seeding system roles on startup.");
+        logger.LogError(ex, "An error occurred while initializing database or seeding system data on startup.");
     }
 }
 
