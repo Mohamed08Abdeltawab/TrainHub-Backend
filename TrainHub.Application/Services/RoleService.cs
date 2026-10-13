@@ -44,7 +44,9 @@ public class RoleService : IRoleService
     {
         _logger.LogInformation("Retrieving roles for user '{UserId}'.", userId);
 
-        var user = await _userManager.FindByIdAsync(userId.ToString());
+        var user = await _userManager.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
         if (user == null)
         {
             _logger.LogWarning("User '{UserId}' was not found.", userId);
@@ -79,7 +81,9 @@ public class RoleService : IRoleService
             throw new NotFoundException("Role", normalizedRole);
         }
 
-        var user = await _userManager.FindByIdAsync(userId.ToString());
+        var user = await _userManager.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
         if (user == null)
         {
             _logger.LogWarning("User '{UserId}' was not found during role assignment.", userId);
@@ -114,7 +118,9 @@ public class RoleService : IRoleService
         var normalizedRole = roleName.Trim();
         _logger.LogInformation("Attempting to remove role '{RoleName}' from user '{UserId}'.", normalizedRole, userId);
 
-        var user = await _userManager.FindByIdAsync(userId.ToString());
+        var user = await _userManager.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
         if (user == null)
         {
             _logger.LogWarning("User '{UserId}' was not found during role removal.", userId);

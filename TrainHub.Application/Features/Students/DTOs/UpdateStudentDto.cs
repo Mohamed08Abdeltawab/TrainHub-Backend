@@ -26,4 +26,14 @@ public class UpdateStudentDto
 
     [MaxLength(StudentConstants.NotesMaxLength, ErrorMessage = "Notes cannot exceed 500 characters.")]
     public string? Notes { get; set; }
+
+    [MaxLength(100)]
+    public string? FirstName { get; set; }
+
+    [MaxLength(100)]
+    public string? LastName { get; set; }
+
+    [Phone(ErrorMessage = "Invalid phone number format.")]
+    [MaxLength(50)]
+    public string? PhoneNumber { get; set; }
 }

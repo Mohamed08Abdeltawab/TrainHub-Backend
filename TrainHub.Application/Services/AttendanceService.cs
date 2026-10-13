@@ -160,6 +160,7 @@ public class AttendanceService : IAttendanceService
                 .ThenInclude(s => s.User)
             .Include(a => a.MarkedByUser)
             .Include(a => a.Session)
+                .ThenInclude(s => s.CourseGroup)
             .AsQueryable();
 
         if (organizationId.HasValue && organizationId.Value != Guid.Empty)
@@ -209,6 +210,7 @@ public class AttendanceService : IAttendanceService
                 .ThenInclude(s => s.User)
             .Include(a => a.MarkedByUser)
             .Include(a => a.Session)
+                .ThenInclude(s => s.CourseGroup)
             .OrderBy(a => a.Student.User.LastName)
             .ThenBy(a => a.Student.User.FirstName)
             .ThenBy(a => a.Id)
@@ -333,6 +335,7 @@ public class AttendanceService : IAttendanceService
                 .ThenInclude(s => s.User)
             .Include(a => a.MarkedByUser)
             .Include(a => a.Session)
+                .ThenInclude(s => s.CourseGroup)
             .FirstAsync(a => a.Id == record.Id, cancellationToken);
 
         return MapToDto(created);
@@ -358,6 +361,7 @@ public class AttendanceService : IAttendanceService
                 .ThenInclude(s => s.User)
             .Include(a => a.MarkedByUser)
             .Include(a => a.Session)
+                .ThenInclude(s => s.CourseGroup)
             .FirstOrDefaultAsync(a => a.Id == id && a.OrganizationId == organizationId.Value, cancellationToken);
 
         if (record == null)
@@ -395,6 +399,7 @@ public class AttendanceService : IAttendanceService
                 .ThenInclude(s => s.User)
             .Include(a => a.MarkedByUser)
             .Include(a => a.Session)
+                .ThenInclude(s => s.CourseGroup)
             .FirstOrDefaultAsync(a => a.Id == id && a.OrganizationId == organizationId.Value, cancellationToken);
 
         if (record == null)
@@ -452,6 +457,9 @@ public class AttendanceService : IAttendanceService
             ? $"{markedByUser.FirstName} {markedByUser.LastName}".Trim()
             : null;
 
+        var session = record.Session;
+        var courseGroup = session?.CourseGroup;
+
         return new AttendanceDto
         {
             Id = record.Id,
@@ -465,7 +473,10 @@ public class AttendanceService : IAttendanceService
             Status = record.Status,
             StatusName = AttendanceConstants.Statuses.GetName(record.Status),
             MarkedAt = record.MarkedAt,
-            Notes = record.Notes
+            Notes = record.Notes,
+            SessionTitle = session?.Room ?? courseGroup?.Name ?? "Session",
+            CourseGroupName = courseGroup?.Name,
+            SessionDate = session?.StartTime
         };
     }
 }

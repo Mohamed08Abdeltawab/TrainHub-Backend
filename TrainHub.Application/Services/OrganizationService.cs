@@ -34,7 +34,6 @@ public class OrganizationService : IOrganizationService
             .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
-
         if (organization == null)
         {
             _logger.LogWarning("Organization '{OrganizationId}' was not found.", id);
@@ -53,7 +52,6 @@ public class OrganizationService : IOrganizationService
             .AsNoTracking()
             .OrderBy(o => o.Name)
             .ToListAsync(cancellationToken);
-
         return organizations.Select(MapToDto).ToList();
     }
 

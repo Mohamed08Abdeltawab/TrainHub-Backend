@@ -163,6 +163,8 @@ public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, Iden
 
             entity.HasIndex(e => e.OrganizationId, "IX_Enrollments_OrganizationId");
 
+            entity.HasIndex(e => e.StudentId, "IX_Enrollments_StudentId");
+
             entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())", "DF_Enrollments_CreatedAt");
             entity.Property(e => e.EnrollmentDate).HasDefaultValueSql("(sysutcdatetime())", "DF_Enrollments_EnrollmentDate");
@@ -225,6 +227,8 @@ public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, Iden
         modelBuilder.Entity<Session>(entity =>
         {
             entity.HasIndex(e => e.CourseGroupId, "IX_Sessions_CourseGroupId");
+
+            entity.HasIndex(e => e.InstructorId, "IX_Sessions_InstructorId");
 
             entity.HasIndex(e => new { e.OrganizationId, e.StartTime }, "IX_Sessions_Org_StartTime");
 

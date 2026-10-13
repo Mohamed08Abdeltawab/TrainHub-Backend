@@ -15,4 +15,14 @@ public class UpdateInstructorDto
 
     [MaxLength(InstructorConstants.BioMaxLength, ErrorMessage = "Bio cannot exceed 2000 characters.")]
     public string? Bio { get; set; }
+
+    [MaxLength(100)]
+    public string? FirstName { get; set; }
+
+    [MaxLength(100)]
+    public string? LastName { get; set; }
+
+    [Phone(ErrorMessage = "Invalid phone number format.")]
+    [MaxLength(50)]
+    public string? PhoneNumber { get; set; }
 }

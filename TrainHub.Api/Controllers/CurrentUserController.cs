@@ -6,6 +6,9 @@ using TrainHub.Application.Interfaces;
 
 namespace TrainHub.Api.Controllers;
 
+/// <summary>
+/// Provides profile and organization identity details for the currently authenticated user.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]

@@ -78,10 +78,14 @@ public class ExceptionHandlingMiddleware
     {
         ValidationException              => (HttpStatusCode.UnprocessableEntity, "Validation Failed"),
         BadRequestException              => (HttpStatusCode.BadRequest,          "Bad Request"),
+        BadHttpRequestException          => (HttpStatusCode.BadRequest,          "Bad Request"),
+        JsonException                    => (HttpStatusCode.BadRequest,          "Bad Request"),
+        FormatException                  => (HttpStatusCode.BadRequest,          "Bad Request"),
         ArgumentException                => (HttpStatusCode.BadRequest,          "Bad Request"),
         UnauthorizedAccessException      => (HttpStatusCode.Unauthorized,        "Unauthorized"),
         ForbiddenAccessException         => (HttpStatusCode.Forbidden,           "Forbidden"),
         NotFoundException                => (HttpStatusCode.NotFound,            "Resource Not Found"),
+        KeyNotFoundException             => (HttpStatusCode.NotFound,            "Resource Not Found"),
         ConflictException                => (HttpStatusCode.Conflict,            "Conflict"),
         OperationCanceledException       => (HttpStatusCode.BadRequest,          "Request Cancelled"),
         DbUpdateConcurrencyException     => (HttpStatusCode.Conflict,            "Concurrency Conflict"),
@@ -173,6 +177,14 @@ public class ExceptionHandlingMiddleware
             "A database conflict occurred while saving changes. A record with identical unique details may already exist, or a referenced entity is invalid.",
         OperationCanceledException =>
             "The request was cancelled by the client.",
+        BadHttpRequestException =>
+            "The request payload or format is invalid.",
+        JsonException =>
+            "The request body contains invalid JSON.",
+        FormatException =>
+            "One or more input values are not in a valid format.",
+        KeyNotFoundException =>
+            "The requested resource was not found.",
         _ =>
             exception.Message
     };

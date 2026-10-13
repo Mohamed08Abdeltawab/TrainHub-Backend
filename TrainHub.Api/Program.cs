@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TrainHub.Api.Middleware;
 using TrainHub.Application;
@@ -41,19 +42,18 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
     {
         var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
-        var defaultOrigins = new[]
-        {
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "http://localhost:3000",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:5174"
-        };
-        var origins = (configuredOrigins != null && configuredOrigins.Length > 0)
+        var allowedOrigins = (configuredOrigins != null && configuredOrigins.Length > 0)
             ? configuredOrigins
-            : defaultOrigins;
+            : new[]
+            {
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000",
+                "http://127.0.0.1:5173",
+                "http://127.0.0.1:5174"
+            };
 
-        policy.WithOrigins(origins)
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -61,12 +61,39 @@ builder.Services.AddCors(options =>
 });
 
 // ── API Services ────────────────────────────────────────────────
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var problemDetails = new ValidationProblemDetails(context.ModelState)
+            {
+                Type = "https://tools.ietf.org/html/rfc7231#section-6.5.1",
+                Title = "One or more validation errors occurred.",
+                Status = StatusCodes.Status400BadRequest,
+                Detail = "Please refer to the errors property for additional details.",
+                Instance = $"{context.HttpContext.Request.Method} {context.HttpContext.Request.Path}"
+            };
+            problemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+
+            return new BadRequestObjectResult(problemDetails)
+            {
+                ContentTypes = { "application/problem+json" }
+            };
+        };
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
     {
+        document.Info = new Microsoft.OpenApi.OpenApiInfo
+        {
+            Title = "TrainHub Management API",
+            Version = "v1",
+            Description = "Multi-tenant RESTful API for TrainHub Training Center Management SaaS platform, covering authentication, organization governance, course groups, sessions, student enrollments, and attendance tracking."
+        };
+
         document.Components ??= new Microsoft.OpenApi.OpenApiComponents();
         document.Components.SecuritySchemes ??= new Dictionary<string, Microsoft.OpenApi.IOpenApiSecurityScheme>();
         document.Components.SecuritySchemes["Bearer"] = new Microsoft.OpenApi.OpenApiSecurityScheme
@@ -89,6 +116,18 @@ builder.Services.AddOpenApi(options =>
         return Task.CompletedTask;
     });
 });
+
+// ── Production Environment Validation ──────────────────────────
+if (!builder.Environment.IsDevelopment())
+{
+    var jwtSecret = builder.Configuration["JwtSettings:Secret"] ?? builder.Configuration["Jwt:Secret"];
+    if (string.Equals(jwtSecret, "TrainHub_Super_Secret_Key_For_Jwt_Signing_Must_Be_At_Least_32_Bytes_Long!", StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException(
+            "Insecure configuration: Development dummy JWT Secret cannot be used in a Production environment. " +
+            "Please set a secure 'JwtSettings__Secret' environment variable.");
+    }
+}
 
 var app = builder.Build();
 
@@ -120,12 +159,26 @@ using (var scope = app.Services.CreateScope())
 // ── HTTP Pipeline ─────────────────Before any thing────────────
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+// ── Security Headers ────────────────────────────────────────────
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["X-XSS-Protection"] = "0";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+    context.Response.Headers["X-Permitted-Cross-Domain-Policies"] = "none";
+
+    await next();
+});
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 else
 {
+    app.UseHsts();
     app.UseHttpsRedirection();
 }
 

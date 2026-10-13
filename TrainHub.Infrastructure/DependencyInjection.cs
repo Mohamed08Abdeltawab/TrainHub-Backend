@@ -20,9 +20,16 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         // ── DbContext ───────────────────────────────────────────────
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "Database connection string 'DefaultConnection' is missing. " +
+                "Please configure 'ConnectionStrings:DefaultConnection' in configuration or environment variables.");
+        }
+
         services.AddDbContext<TrainHubDbContext>(options =>
-            options.UseSqlServer(
-                configuration.GetConnectionString("DefaultConnection")));
+            options.UseSqlServer(connectionString));
 
         services.AddScoped<ITrainHubDbContext>(sp => sp.GetRequiredService<TrainHubDbContext>());
 

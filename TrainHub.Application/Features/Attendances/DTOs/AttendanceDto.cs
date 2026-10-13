@@ -28,4 +28,10 @@ public class AttendanceDto
     public DateTime MarkedAt { get; set; }
 
     public string? Notes { get; set; }
+
+    public string? SessionTitle { get; set; }
+
+    public string? CourseGroupName { get; set; }
+
+    public DateTime? SessionDate { get; set; }
 }
