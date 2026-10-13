@@ -158,4 +158,72 @@ public class StudentsControllerTests
         noContentResult!.StatusCode.Should().Be(204);
         _studentServiceMock.Verify(s => s.DeleteAsync(studentId, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task GetMyCohorts_AuthenticatedUser_ReturnsOkWithCohorts()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var cohorts = new List<TrainHub.Application.Features.CourseGroups.DTOs.CourseGroupDto>
+        {
+            new() { Id = Guid.NewGuid(), Name = "Cohort A", CourseName = "Web Dev" }
+        };
+
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+            {
+                User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+                [
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, userId.ToString())
+                ]))
+            }
+        };
+
+        _studentServiceMock.Setup(s => s.GetMyCohortsAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cohorts);
+
+        // Act
+        var result = await _controller.GetMyCohorts(CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(cohorts);
+    }
+
+    [Fact]
+    public async Task GetMySessions_AuthenticatedUser_ReturnsOkWithSessions()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var sessions = new List<TrainHub.Application.Features.Sessions.DTOs.SessionDto>
+        {
+            new() { Id = Guid.NewGuid(), CourseGroupName = "Cohort A", Room = "Room 101" }
+        };
+
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+            {
+                User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+                [
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, userId.ToString())
+                ]))
+            }
+        };
+
+        _studentServiceMock.Setup(s => s.GetMySessionsAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(sessions);
+
+        // Act
+        var result = await _controller.GetMySessions(CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(sessions);
+    }
 }

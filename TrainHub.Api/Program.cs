@@ -1,8 +1,10 @@
+using Microsoft.EntityFrameworkCore;
 using TrainHub.Api.Middleware;
 using TrainHub.Application;
 using TrainHub.Application.Interfaces;
 using TrainHub.Domain.Constants;
 using TrainHub.Infrastructure;
+using TrainHub.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,12 +40,20 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(
-                  "http://localhost:5173",
-                  "http://localhost:5174",
-                  "http://localhost:3000",
-                  "http://127.0.0.1:5173",
-                  "http://127.0.0.1:5174")
+        var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+        var defaultOrigins = new[]
+        {
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:3000",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:5174"
+        };
+        var origins = (configuredOrigins != null && configuredOrigins.Length > 0)
+            ? configuredOrigins
+            : defaultOrigins;
+
+        policy.WithOrigins(origins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -82,18 +92,28 @@ builder.Services.AddOpenApi(options =>
 
 var app = builder.Build();
 
-// ── Seed Default System Roles on Startup ────────────────────────
+// ── Apply Migrations & Seed Default System Roles & Demo Data ────
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
+        var dbContext = scope.ServiceProvider.GetRequiredService<TrainHubDbContext>();
+        if (dbContext.Database.IsRelational())
+        {
+            logger.LogInformation("Applying pending database migrations...");
+            await dbContext.Database.MigrateAsync();
+        }
+
         var roleSeeder = scope.ServiceProvider.GetRequiredService<IRoleSeeder>();
         await roleSeeder.SeedAsync();
+
+        var demoSeeder = scope.ServiceProvider.GetRequiredService<IDemoDataSeeder>();
+        await demoSeeder.SeedAsync();
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred while seeding system roles on startup.");
+        logger.LogError(ex, "An error occurred while initializing database or seeding system data on startup.");
     }
 }
 

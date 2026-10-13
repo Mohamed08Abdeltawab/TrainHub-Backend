@@ -32,7 +32,7 @@ public static class DependencyInjection
             // Password settings
             options.Password.RequireDigit = true;
             options.Password.RequireLowercase = true;
-            options.Password.RequireUppercase = true;
+            options.Password.RequireUppercase = false;
             options.Password.RequireNonAlphanumeric = false;
             options.Password.RequiredLength = 8;
 
@@ -47,8 +47,9 @@ public static class DependencyInjection
         .AddRoles<IdentityRole<Guid>>()
         .AddEntityFrameworkStores<TrainHubDbContext>();
 
-        // ── Role Seeding ────────────────────────────────────────────
+        // ── Role & Demo Data Seeding ─────────────────────────────────
         services.AddScoped<IRoleSeeder, RoleSeeder>();
+        services.AddScoped<IDemoDataSeeder, DemoDataSeeder>();
 
         // ── Tenant Context & HTTP Accessor ──────────────────────────
         services.AddHttpContextAccessor();

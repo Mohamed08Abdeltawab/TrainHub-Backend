@@ -384,6 +384,151 @@ public class InstructorService : IInstructorService
         _logger.LogInformation("Instructor '{InstructorId}' deleted successfully.", id);
     }
 
+    public async Task<IEnumerable<InstructorCourseDto>> GetMyCoursesAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving assigned courses for instructor user ID '{UserId}'.", userId);
+
+        var instructor = await _dbContext.Instructors
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.UserId == userId, cancellationToken);
+
+        if (instructor == null)
+        {
+            return Enumerable.Empty<InstructorCourseDto>();
+        }
+
+        var groups = await _dbContext.CourseGroups
+            .AsNoTracking()
+            .Include(cg => cg.Course)
+            .Include(cg => cg.Enrollments)
+            .Where(cg => cg.InstructorId == instructor.Id)
+            .ToListAsync(cancellationToken);
+
+        var courses = groups
+            .GroupBy(cg => cg.Course)
+            .Where(g => g.Key != null)
+            .Select(g => new InstructorCourseDto
+            {
+                Id = g.Key.Id,
+                Title = g.Key.Name,
+                Name = g.Key.Name,
+                Description = g.Key.Description ?? string.Empty,
+                Category = g.Key.Category ?? "General",
+                Level = "Intermediate",
+                DurationHours = g.Key.DurationInHours ?? 0,
+                Status = g.Key.Status == CourseConstants.Statuses.Active ? "Active" : "Inactive",
+                CreatedAt = g.Key.CreatedAt,
+                ActiveCohortsCount = g.Count(cg => cg.Status == CourseGroupConstants.Statuses.Active),
+                TotalStudentsCount = g.SelectMany(cg => cg.Enrollments).Select(e => e.StudentId).Distinct().Count()
+            })
+            .ToList();
+
+        return courses;
+    }
+
+    public async Task<IEnumerable<InstructorCohortDto>> GetMyCohortsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving assigned cohorts for instructor user ID '{UserId}'.", userId);
+
+        var instructor = await _dbContext.Instructors
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.UserId == userId, cancellationToken);
+
+        if (instructor == null)
+        {
+            return Enumerable.Empty<InstructorCohortDto>();
+        }
+
+        var cohorts = await _dbContext.CourseGroups
+            .AsNoTracking()
+            .Include(cg => cg.Course)
+            .Include(cg => cg.Enrollments)
+            .Where(cg => cg.InstructorId == instructor.Id)
+            .OrderByDescending(cg => cg.StartDate)
+            .ToListAsync(cancellationToken);
+
+        return cohorts.Select(cg => new InstructorCohortDto
+        {
+            Id = cg.Id,
+            CourseId = cg.CourseId,
+            CourseName = cg.Course?.Name ?? string.Empty,
+            Name = cg.Name,
+            StartDate = cg.StartDate,
+            EndDate = cg.EndDate,
+            ScheduleDescription = cg.ScheduleDescription,
+            Capacity = cg.Capacity,
+            EnrolledStudentsCount = cg.Enrollments.Count,
+            Status = cg.Status == CourseGroupConstants.Statuses.Active ? "Active" :
+                     cg.Status == CourseGroupConstants.Statuses.Completed ? "Completed" : "Cancelled"
+        }).ToList();
+    }
+
+    public async Task<IEnumerable<InstructorSessionDto>> GetMySessionsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving assigned sessions for instructor user ID '{UserId}'.", userId);
+
+        var instructor = await _dbContext.Instructors
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.UserId == userId, cancellationToken);
+
+        if (instructor == null)
+        {
+            return Enumerable.Empty<InstructorSessionDto>();
+        }
+
+        var sessions = await _dbContext.Sessions
+            .AsNoTracking()
+            .Include(s => s.CourseGroup)
+            .Where(s => s.InstructorId == instructor.Id || s.CourseGroup.InstructorId == instructor.Id)
+            .OrderBy(s => s.StartTime)
+            .ToListAsync(cancellationToken);
+
+        return sessions.Select(s => new InstructorSessionDto
+        {
+            Id = s.Id,
+            CourseGroupId = s.CourseGroupId,
+            CourseGroupName = s.CourseGroup?.Name ?? string.Empty,
+            StartTime = s.StartTime,
+            EndTime = s.EndTime,
+            Room = s.Room,
+            Status = s.Status == SessionConstants.Statuses.Completed ? "Completed" :
+                     s.Status == SessionConstants.Statuses.Cancelled ? "Cancelled" : "Scheduled"
+        }).ToList();
+    }
+
+    public async Task<IEnumerable<InstructorStudentDto>> GetMyStudentsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving enrolled students for instructor user ID '{UserId}'.", userId);
+
+        var instructor = await _dbContext.Instructors
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.UserId == userId, cancellationToken);
+
+        if (instructor == null)
+        {
+            return Enumerable.Empty<InstructorStudentDto>();
+        }
+
+        var enrollments = await _dbContext.Enrollments
+            .AsNoTracking()
+            .Include(e => e.Student)
+                .ThenInclude(st => st.User)
+            .Include(e => e.CourseGroup)
+            .Where(e => e.CourseGroup.InstructorId == instructor.Id)
+            .ToListAsync(cancellationToken);
+
+        return enrollments.Select(e => new InstructorStudentDto
+        {
+            Id = e.StudentId,
+            StudentCode = e.Student?.StudentCode ?? string.Empty,
+            FullName = e.Student?.User != null ? $"{e.Student.User.FirstName} {e.Student.User.LastName}".Trim() : "Student",
+            Email = e.Student?.User?.Email,
+            CourseGroupName = e.CourseGroup?.Name ?? string.Empty,
+            EnrollmentStatus = e.Status == EnrollmentConstants.Statuses.Active ? "Active" :
+                               e.Status == EnrollmentConstants.Statuses.Completed ? "Completed" : "Cancelled"
+        }).ToList();
+    }
+
     private static InstructorDto MapToDto(Instructor instructor) => MapToDto(instructor, null);
 
     private static InstructorDto MapToDto(Instructor instructor, ApplicationUser? user)

@@ -31,7 +31,7 @@ public class SessionsController : ControllerBase
     /// Retrieves a paginated list of sessions with optional filtering and sorting within the current organization.
     /// </summary>
     [HttpGet]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize]
     [ProducesResponseType(typeof(PagedResult<SessionDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
@@ -48,7 +48,7 @@ public class SessionsController : ControllerBase
     /// Retrieves a session by its unique ID.
     /// </summary>
     [HttpGet("{id:guid}")]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize]
     [ProducesResponseType(typeof(SessionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<SessionDto>> GetById(Guid id, CancellationToken cancellationToken)
@@ -63,7 +63,7 @@ public class SessionsController : ControllerBase
     /// </summary>
     [HttpGet("group/{courseGroupId:guid}")]
     [HttpGet("/api/coursegroups/{courseGroupId:guid}/sessions")]
-    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [Authorize]
     [ProducesResponseType(typeof(IReadOnlyList<SessionDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

@@ -30,7 +30,11 @@ public class OrganizationService : IOrganizationService
     {
         _logger.LogInformation("Retrieving organization with ID '{OrganizationId}'.", id);
 
-        var organization = await _dbContext.Organizations.FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+        var organization = await _dbContext.Organizations
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
         if (organization == null)
         {
             _logger.LogWarning("Organization '{OrganizationId}' was not found.", id);
@@ -44,7 +48,12 @@ public class OrganizationService : IOrganizationService
     {
         _logger.LogInformation("Retrieving all organizations.");
 
-        var organizations = await _dbContext.Organizations.ToListAsync(cancellationToken);
+        var organizations = await _dbContext.Organizations
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .OrderBy(o => o.Name)
+            .ToListAsync(cancellationToken);
+
         return organizations.Select(MapToDto).ToList();
     }
 
@@ -87,7 +96,9 @@ public class OrganizationService : IOrganizationService
         // Validate business rules and conflict checks
         await _organizationValidator.ValidateUpdateAsync(id, dto, cancellationToken);
 
-        var organization = await _dbContext.Organizations.FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+        var organization = await _dbContext.Organizations
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
         if (organization == null)
         {
             _logger.LogWarning("Organization '{OrganizationId}' was not found for update.", id);
@@ -118,7 +129,9 @@ public class OrganizationService : IOrganizationService
         // Validate business rules and dependencies before deletion
         await _organizationValidator.ValidateDeleteAsync(id, cancellationToken);
 
-        var organization = await _dbContext.Organizations.FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+        var organization = await _dbContext.Organizations
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
         if (organization == null)
         {
             _logger.LogWarning("Organization '{OrganizationId}' was not found for deletion.", id);

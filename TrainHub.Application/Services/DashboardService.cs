@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
@@ -16,15 +18,18 @@ public class DashboardService : IDashboardService
     private readonly ITrainHubDbContext _dbContext;
     private readonly ICurrentOrganizationService _currentOrganizationService;
     private readonly ILogger<DashboardService> _logger;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     public DashboardService(
         ITrainHubDbContext dbContext,
         ICurrentOrganizationService currentOrganizationService,
-        ILogger<DashboardService> logger)
+        ILogger<DashboardService> logger,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _dbContext = dbContext;
         _currentOrganizationService = currentOrganizationService;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<DashboardSummaryDto> GetDashboardSummaryAsync(CancellationToken cancellationToken = default)
@@ -285,6 +290,313 @@ public class DashboardService : IDashboardService
             CompletedSessions = completedSessions,
             CancelledSessions = cancelledSessions,
             DraftSessions = draftSessions
+        };
+    }
+
+    public async Task<DashboardContentDto> GetDashboardContentAsync(CancellationToken cancellationToken = default)
+    {
+        var roles = GetCallerRoles();
+
+        _logger.LogInformation("Resolving dashboard content for caller with roles: {Roles}.", string.Join(", ", roles));
+
+        if (roles.Contains(AppRoles.SuperAdmin, StringComparer.OrdinalIgnoreCase))
+        {
+            return await BuildSuperAdminAsync(cancellationToken);
+        }
+
+        if (roles.Contains(AppRoles.OrgAdmin, StringComparer.OrdinalIgnoreCase))
+        {
+            return await BuildOrgAdminAsync(cancellationToken);
+        }
+
+        if (roles.Contains(AppRoles.Instructor, StringComparer.OrdinalIgnoreCase))
+        {
+            return await BuildInstructorAsync(cancellationToken);
+        }
+
+        if (roles.Contains(AppRoles.Student, StringComparer.OrdinalIgnoreCase))
+        {
+            return await BuildStudentAsync(cancellationToken);
+        }
+
+        throw new ForbiddenAccessException("No dashboard is available for your role.");
+    }
+
+    private IReadOnlyList<string> GetCallerRoles()
+    {
+        var user = _httpContextAccessor?.HttpContext?.User;
+        if (user == null) return [];
+
+        return user.FindAll(ClaimTypes.Role)
+            .Concat(user.FindAll("role"))
+            .Select(c => c.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private Guid? GetCallerUserId()
+    {
+        var user = _httpContextAccessor?.HttpContext?.User;
+        if (user == null) return null;
+
+        var claim = user.FindFirst(ClaimTypes.NameIdentifier) ?? user.FindFirst("sub");
+        if (claim != null && Guid.TryParse(claim.Value, out var id))
+            return id;
+
+        return null;
+    }
+
+    private async Task<DashboardContentDto> BuildSuperAdminAsync(CancellationToken ct)
+    {
+        var totalOrgs = await _dbContext.Organizations
+            .IgnoreQueryFilters().AsNoTracking().CountAsync(ct);
+
+        var totalUsers = await _dbContext.ApplicationUsers
+            .IgnoreQueryFilters().AsNoTracking().CountAsync(ct);
+
+        var totalCourses = await _dbContext.Courses
+            .IgnoreQueryFilters().AsNoTracking().CountAsync(ct);
+
+        var totalStudents = await _dbContext.Students
+            .IgnoreQueryFilters().AsNoTracking().CountAsync(ct);
+
+        var recentOrgs = await _dbContext.Organizations
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(5)
+            .ToListAsync(ct);
+
+        var rows = recentOrgs.Select(o => new DashboardRowDto
+        {
+            Title = o.Name,
+            Detail = $"Slug: {o.Slug} • Created: {o.CreatedAt:yyyy-MM-dd}",
+            Status = o.IsActive ? "Active" : "Inactive"
+        }).ToList();
+
+        return new DashboardContentDto
+        {
+            Tenant = "Platform",
+            Plan = "Super Administrator",
+            Section = "Overview",
+            Title = "Platform Administration",
+            Description = "Multi-tenant system monitoring, center management, and global platform operations.",
+            Action = "Organizations",
+            Metrics =
+            [
+                new DashboardMetricDto { Label = "Total Centers", Value = totalOrgs.ToString("N0"), Note = "Registered training centers" },
+                new DashboardMetricDto { Label = "Platform Users", Value = totalUsers.ToString("N0"), Note = "System-wide accounts" },
+                new DashboardMetricDto { Label = "Active Courses", Value = totalCourses.ToString("N0"), Note = "Across all organizations" },
+                new DashboardMetricDto { Label = "Total Learners", Value = totalStudents.ToString("N0"), Note = "Enrolled trainees" }
+            ],
+            TableTitle = "Registered Training Centers",
+            Subtitle = "Active tenant organizations",
+            Rows = rows,
+            Scope = "Platform-wide",
+            Capabilities = ["View all organizations", "System-wide user directory", "Tenant isolation administration"]
+        };
+    }
+
+    private async Task<DashboardContentDto> BuildOrgAdminAsync(CancellationToken ct)
+    {
+        var orgId = GetRequiredOrganizationId();
+
+        var org = await _dbContext.Organizations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == orgId, ct);
+
+        var orgName = org?.Name ?? "Organization";
+
+        var totalStudents = await _dbContext.Students
+            .AsNoTracking()
+            .Where(s => s.OrganizationId == orgId)
+            .CountAsync(ct);
+
+        var activeCourses = await _dbContext.Courses
+            .AsNoTracking()
+            .Where(c => c.OrganizationId == orgId && c.Status == CourseConstants.Statuses.Active)
+            .CountAsync(ct);
+
+        var activeCohorts = await _dbContext.CourseGroups
+            .AsNoTracking()
+            .Where(g => g.OrganizationId == orgId && g.Status == CourseGroupConstants.Statuses.Active)
+            .CountAsync(ct);
+
+        var attendanceStats = await GetAttendanceStatisticsAsync(null, ct);
+
+        var cohorts = await _dbContext.CourseGroups
+            .AsNoTracking()
+            .Where(g => g.OrganizationId == orgId)
+            .Include(g => g.Course)
+            .OrderByDescending(g => g.CreatedAt)
+            .Take(5)
+            .ToListAsync(ct);
+
+        var rows = cohorts.Select(g => new DashboardRowDto
+        {
+            Title = g.Name,
+            Detail = $"{g.Course.Name} • {g.ScheduleDescription ?? "Scheduled"}",
+            Status = g.Status == CourseGroupConstants.Statuses.Active ? "Active" : "Inactive"
+        }).ToList();
+
+        return new DashboardContentDto
+        {
+            Tenant = orgName,
+            Plan = "Training Center",
+            Section = "Overview",
+            Title = $"{orgName} Overview",
+            Description = "Manage courses, cohorts, instructors, and learners for your training center.",
+            Action = "Courses",
+            Metrics =
+            [
+                new DashboardMetricDto { Label = "Total Students", Value = totalStudents.ToString("N0"), Note = "Active and registered learners" },
+                new DashboardMetricDto { Label = "Active Courses", Value = activeCourses.ToString("N0"), Note = "Curricula offered" },
+                new DashboardMetricDto { Label = "Active Cohorts", Value = activeCohorts.ToString("N0"), Note = "Ongoing training batches" },
+                new DashboardMetricDto { Label = "Attendance Rate", Value = $"{attendanceStats.AttendancePercentage:F1}%", Note = "Overall center attendance" }
+            ],
+            TableTitle = "Active Cohorts",
+            Subtitle = "Current training batches",
+            Rows = rows,
+            Scope = "Organization-scoped",
+            Capabilities = ["Manage courses and cohorts", "Manage instructors and learners", "Track attendance and sessions"]
+        };
+    }
+
+    private async Task<DashboardContentDto> BuildInstructorAsync(CancellationToken ct)
+    {
+        var userId = GetCallerUserId() ?? throw new ForbiddenAccessException("User identity could not be verified.");
+
+        var instructor = await _dbContext.Instructors
+            .AsNoTracking()
+            .Include(i => i.Organization)
+            .FirstOrDefaultAsync(i => i.UserId == userId, ct);
+
+        if (instructor == null)
+        {
+            throw new NotFoundException("Instructor profile not found.");
+        }
+
+        var assignedCohortIds = await _dbContext.CourseGroups
+            .AsNoTracking()
+            .Where(g => g.InstructorId == instructor.Id)
+            .Select(g => g.Id)
+            .ToListAsync(ct);
+
+        var assignedCohortsCount = assignedCohortIds.Count;
+
+        var assignedCoursesCount = await _dbContext.CourseGroups
+            .AsNoTracking()
+            .Where(g => g.InstructorId == instructor.Id)
+            .Select(g => g.CourseId)
+            .Distinct()
+            .CountAsync(ct);
+
+        var instructorStudentsCount = await _dbContext.Enrollments
+            .AsNoTracking()
+            .Where(e => assignedCohortIds.Contains(e.CourseGroupId))
+            .Select(e => e.StudentId)
+            .Distinct()
+            .CountAsync(ct);
+
+        var upcomingSessions = await _dbContext.Sessions
+            .AsNoTracking()
+            .Where(s => assignedCohortIds.Contains(s.CourseGroupId) || s.InstructorId == instructor.Id)
+            .Include(s => s.CourseGroup)
+            .OrderBy(s => s.StartTime)
+            .Take(5)
+            .ToListAsync(ct);
+
+        var rows = upcomingSessions.Select(s => new DashboardRowDto
+        {
+            Title = s.CourseGroup?.Name ?? "Session",
+            Detail = $"{s.StartTime:yyyy-MM-dd HH:mm} • Room: {s.Room ?? "Online"}",
+            Status = s.Status == SessionConstants.Statuses.Completed ? "Completed" : "Scheduled"
+        }).ToList();
+
+        return new DashboardContentDto
+        {
+            Tenant = instructor.Organization?.Name ?? "Training Center",
+            Plan = "Instructor",
+            Section = "Overview",
+            Title = "Instructor Workspace",
+            Description = "Manage your assigned cohorts, upcoming class sessions, and student attendance.",
+            Action = "Sessions",
+            Metrics =
+            [
+                new DashboardMetricDto { Label = "Assigned Cohorts", Value = assignedCohortsCount.ToString("N0"), Note = "Active teaching groups" },
+                new DashboardMetricDto { Label = "Assigned Courses", Value = assignedCoursesCount.ToString("N0"), Note = "Unique courses taught" },
+                new DashboardMetricDto { Label = "Enrolled Students", Value = instructorStudentsCount.ToString("N0"), Note = "Across your cohorts" },
+                new DashboardMetricDto { Label = "Upcoming Sessions", Value = upcomingSessions.Count.ToString("N0"), Note = "Scheduled classes" }
+            ],
+            TableTitle = "Upcoming Sessions",
+            Subtitle = "Classes scheduled for your cohorts",
+            Rows = rows,
+            Scope = "Instructor-scoped",
+            Capabilities = ["View assigned cohorts", "Mark session attendance", "Review enrolled students"]
+        };
+    }
+
+    private async Task<DashboardContentDto> BuildStudentAsync(CancellationToken ct)
+    {
+        var userId = GetCallerUserId() ?? throw new ForbiddenAccessException("User identity could not be verified.");
+
+        var student = await _dbContext.Students
+            .AsNoTracking()
+            .Include(s => s.Organization)
+            .FirstOrDefaultAsync(s => s.UserId == userId, ct);
+
+        if (student == null)
+        {
+            throw new NotFoundException("Student profile not found.");
+        }
+
+        var enrollments = await _dbContext.Enrollments
+            .AsNoTracking()
+            .Where(e => e.StudentId == student.Id)
+            .Include(e => e.CourseGroup)
+                .ThenInclude(g => g.Course)
+            .ToListAsync(ct);
+
+        var totalEnrolled = enrollments.Count;
+        var activeEnrolled = enrollments.Count(e => e.Status == EnrollmentConstants.Statuses.Active);
+        var completedEnrolled = enrollments.Count(e => e.Status == EnrollmentConstants.Statuses.Completed);
+
+        var attendanceRecords = await _dbContext.AttendanceRecords
+            .AsNoTracking()
+            .Where(a => a.StudentId == student.Id)
+            .ToListAsync(ct);
+
+        var attendedCount = attendanceRecords.Count(a => a.IsAttended);
+        var totalRecords = attendanceRecords.Count;
+        var attendanceRate = totalRecords > 0 ? (double)attendedCount / totalRecords * 100 : 100.0;
+
+        var rows = enrollments.Take(5).Select(e => new DashboardRowDto
+        {
+            Title = e.CourseGroup?.Course?.Name ?? "Course",
+            Detail = $"Cohort: {e.CourseGroup?.Name ?? "Standard"} • Enrolled: {e.EnrollmentDate:yyyy-MM-dd}",
+            Status = e.Status == EnrollmentConstants.Statuses.Active ? "Active" : "Completed"
+        }).ToList();
+
+        return new DashboardContentDto
+        {
+            Tenant = student.Organization?.Name ?? "Training Center",
+            Plan = "Student",
+            Section = "Overview",
+            Title = "Learner Portal",
+            Description = "Track your enrolled courses, view upcoming training sessions, and check attendance.",
+            Action = "My courses",
+            Metrics =
+            [
+                new DashboardMetricDto { Label = "Enrolled Courses", Value = totalEnrolled.ToString("N0"), Note = "All enrolled programs" },
+                new DashboardMetricDto { Label = "Active Courses", Value = activeEnrolled.ToString("N0"), Note = "In-progress cohorts" },
+                new DashboardMetricDto { Label = "Completed Courses", Value = completedEnrolled.ToString("N0"), Note = "Finished courses" },
+                new DashboardMetricDto { Label = "Attendance Rate", Value = $"{attendanceRate:F1}%", Note = "Personal attendance" }
+            ],
+            TableTitle = "My Enrolled Courses",
+            Subtitle = "Active training programs",
+            Rows = rows,
+            Scope = "Student-scoped",
+            Capabilities = ["Access enrolled courses", "View class schedule", "Monitor personal attendance"]
         };
     }
 
