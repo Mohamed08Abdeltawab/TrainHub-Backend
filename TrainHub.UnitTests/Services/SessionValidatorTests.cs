@@ -911,4 +911,189 @@ public class SessionValidatorTests : IDisposable
     }
 
     #endregion
+
+    #region DAT-02: Instructor Schedule Overlap Tests
+
+    [Fact]
+    public async Task ValidateCreateAsync_WhenInstructorHasOverlappingSessionInAnotherGroup_ThrowsConflictException()
+    {
+        // Arrange
+        var baseDate = _courseGroup.StartDate.ToDateTime(new TimeOnly(10, 0));
+        var existingSession = Session.Create(
+            _organizationId,
+            _courseGroup.Id,
+            baseDate,
+            baseDate.AddHours(2), // 10:00 - 12:00
+            "Room 101",
+            _instructor.Id,
+            SessionConstants.Statuses.Scheduled);
+        await _dbContext.Sessions.AddAsync(existingSession);
+
+        // Group 2 in same organization
+        var group2 = CourseGroup.Create(
+            _organizationId,
+            _course.Id,
+            "Group 2",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1));
+        await _dbContext.CourseGroups.AddAsync(group2);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new CreateSessionDto
+        {
+            CourseGroupId = group2.Id,
+            InstructorId = _instructor.Id,
+            StartTime = baseDate.AddHours(1),     // 11:00
+            EndTime = baseDate.AddHours(3),       // 13:00 (overlaps 11:00-12:00)
+            Status = SessionConstants.Statuses.Scheduled
+        };
+
+        // Act
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*already has a scheduled session during this time interval*");
+    }
+
+    [Fact]
+    public async Task ValidateCreateAsync_WhenInstructorHasAdjacentSession_DoesNotThrow()
+    {
+        // Arrange
+        var baseDate = _courseGroup.StartDate.ToDateTime(new TimeOnly(10, 0));
+        var existingSession = Session.Create(
+            _organizationId,
+            _courseGroup.Id,
+            baseDate,
+            baseDate.AddHours(2), // 10:00 - 12:00
+            "Room 101",
+            _instructor.Id,
+            SessionConstants.Statuses.Scheduled);
+        await _dbContext.Sessions.AddAsync(existingSession);
+        await _dbContext.SaveChangesAsync();
+
+        // Adjacent session starting exactly when existing ends (12:00 - 14:00)
+        var dto = new CreateSessionDto
+        {
+            CourseGroupId = _courseGroup.Id,
+            InstructorId = _instructor.Id,
+            StartTime = baseDate.AddHours(2), // 12:00
+            EndTime = baseDate.AddHours(4),   // 14:00
+            Status = SessionConstants.Statuses.Scheduled
+        };
+
+        // Act
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ValidateCreateAsync_WhenOverlappingSessionIsCancelled_DoesNotThrow()
+    {
+        // Arrange
+        var baseDate = _courseGroup.StartDate.ToDateTime(new TimeOnly(10, 0));
+        var cancelledSession = Session.Create(
+            _organizationId,
+            _courseGroup.Id,
+            baseDate,
+            baseDate.AddHours(2), // 10:00 - 12:00
+            "Room 101",
+            _instructor.Id,
+            SessionConstants.Statuses.Cancelled); // Cancelled
+        await _dbContext.Sessions.AddAsync(cancelledSession);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new CreateSessionDto
+        {
+            CourseGroupId = _courseGroup.Id,
+            InstructorId = _instructor.Id,
+            StartTime = baseDate.AddMinutes(30), // 10:30
+            EndTime = baseDate.AddHours(2),      // 12:00
+            Status = SessionConstants.Statuses.Scheduled
+        };
+
+        // Act
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ValidateUpdateAsync_WhenUpdatingOwnSessionTime_ExcludesSelfAndDoesNotThrow()
+    {
+        // Arrange
+        var baseDate = _courseGroup.StartDate.ToDateTime(new TimeOnly(10, 0));
+        var session = Session.Create(
+            _organizationId,
+            _courseGroup.Id,
+            baseDate,
+            baseDate.AddHours(2), // 10:00 - 12:00
+            "Room 101",
+            _instructor.Id,
+            SessionConstants.Statuses.Scheduled);
+        await _dbContext.Sessions.AddAsync(session);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new UpdateSessionDto
+        {
+            InstructorId = _instructor.Id,
+            StartTime = baseDate.AddMinutes(15), // 10:15
+            EndTime = baseDate.AddHours(2),      // 12:00
+            Status = SessionConstants.Statuses.Scheduled
+        };
+
+        // Act
+        var act = () => _validator.ValidateUpdateAsync(session.Id, dto, _organizationId);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ValidateUpdateAsync_WhenUpdatingToOverlapWithAnotherActiveSession_ThrowsConflictException()
+    {
+        // Arrange
+        var baseDate = _courseGroup.StartDate.ToDateTime(new TimeOnly(10, 0));
+        var session1 = Session.Create(
+            _organizationId,
+            _courseGroup.Id,
+            baseDate,
+            baseDate.AddHours(2), // 10:00 - 12:00
+            "Room 101",
+            _instructor.Id,
+            SessionConstants.Statuses.Scheduled);
+
+        var session2 = Session.Create(
+            _organizationId,
+            _courseGroup.Id,
+            baseDate.AddHours(4),
+            baseDate.AddHours(6), // 14:00 - 16:00
+            "Room 102",
+            _instructor.Id,
+            SessionConstants.Statuses.Scheduled);
+
+        await _dbContext.Sessions.AddRangeAsync(session1, session2);
+        await _dbContext.SaveChangesAsync();
+
+        // Updating session2 to overlap with session1 (11:00 - 13:00)
+        var dto = new UpdateSessionDto
+        {
+            InstructorId = _instructor.Id,
+            StartTime = baseDate.AddHours(1),
+            EndTime = baseDate.AddHours(3),
+            Status = SessionConstants.Statuses.Scheduled
+        };
+
+        // Act
+        var act = () => _validator.ValidateUpdateAsync(session2.Id, dto, _organizationId);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*already has a scheduled session during this time interval*");
+    }
+
+    #endregion
 }

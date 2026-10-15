@@ -151,6 +151,13 @@ public class SessionValidator : ISessionValidator
 
         // 6. Instructor authorization check based on CourseGroup/Instructor relationship
         await ValidateInstructorAuthorizationForCourseGroupAsync(courseGroup, currentUserId, organizationId, dto.InstructorId, cancellationToken);
+
+        // 7. Verify Instructor does not have overlapping active sessions in the organization (DAT-02)
+        var effectiveInstructorId = dto.InstructorId ?? courseGroup.InstructorId;
+        if (effectiveInstructorId.HasValue && dto.Status != SessionConstants.Statuses.Cancelled)
+        {
+            await ValidateInstructorNoScheduleOverlapAsync(effectiveInstructorId.Value, dto.StartTime, dto.EndTime, null, organizationId, cancellationToken);
+        }
     }
 
     public async Task ValidateUpdateAsync(Guid id, UpdateSessionDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
@@ -231,6 +238,14 @@ public class SessionValidator : ISessionValidator
 
         // 6. Instructor authorization check based on CourseGroup/Instructor relationship
         await ValidateInstructorAuthorizationForSessionAsync(session, currentUserId, organizationId, dto.InstructorId, cancellationToken);
+
+        // 7. Verify Instructor does not have overlapping active sessions in the organization (DAT-02)
+        var effectiveInstructorId = dto.InstructorId ?? session.InstructorId ?? session.CourseGroup?.InstructorId;
+        var effectiveStatus = dto.Status ?? session.Status;
+        if (effectiveInstructorId.HasValue && effectiveStatus != SessionConstants.Statuses.Cancelled)
+        {
+            await ValidateInstructorNoScheduleOverlapAsync(effectiveInstructorId.Value, dto.StartTime, dto.EndTime, id, organizationId, cancellationToken);
+        }
     }
 
     public async Task ValidateRescheduleAsync(Guid id, RescheduleSessionDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
@@ -274,6 +289,13 @@ public class SessionValidator : ISessionValidator
 
         // 4. Instructor authorization check based on CourseGroup/Instructor relationship
         await ValidateInstructorAuthorizationForSessionAsync(session, currentUserId, organizationId, null, cancellationToken);
+
+        // 5. Verify Instructor does not have overlapping active sessions in the organization (DAT-02)
+        var effectiveInstructorId = session.InstructorId ?? session.CourseGroup?.InstructorId;
+        if (effectiveInstructorId.HasValue && session.Status != SessionConstants.Statuses.Cancelled)
+        {
+            await ValidateInstructorNoScheduleOverlapAsync(effectiveInstructorId.Value, dto.StartTime, dto.EndTime, id, organizationId, cancellationToken);
+        }
     }
 
     public async Task ValidateUpdateStatusAsync(Guid id, byte status, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
@@ -490,6 +512,33 @@ public class SessionValidator : ISessionValidator
             .FirstOrDefaultAsync(i => i.UserId == userId && i.OrganizationId == organizationId, cancellationToken);
 
         return (false, instructor);
+    }
+
+    private async Task ValidateInstructorNoScheduleOverlapAsync(
+        Guid instructorId,
+        DateTime startTime,
+        DateTime endTime,
+        Guid? currentSessionId,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var hasOverlap = await _dbContext.Sessions
+            .IgnoreQueryFilters()
+            .Include(s => s.CourseGroup)
+            .AnyAsync(s =>
+                s.OrganizationId == organizationId &&
+                (!currentSessionId.HasValue || s.Id != currentSessionId.Value) &&
+                s.Status != SessionConstants.Statuses.Cancelled &&
+                (s.InstructorId == instructorId || (s.InstructorId == null && s.CourseGroup != null && s.CourseGroup.InstructorId == instructorId)) &&
+                startTime < s.EndTime && s.StartTime < endTime,
+                cancellationToken);
+
+        if (hasOverlap)
+        {
+            _logger.LogWarning("Validation failed: Instructor '{InstructorId}' already has an overlapping active session scheduled between '{StartTime}' and '{EndTime}'.",
+                instructorId, startTime, endTime);
+            throw new ConflictException("Instructor already has a scheduled session during this time interval.");
+        }
     }
 
     #endregion

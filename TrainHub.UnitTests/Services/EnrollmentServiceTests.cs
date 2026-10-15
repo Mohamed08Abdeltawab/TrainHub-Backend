@@ -331,4 +331,191 @@ public class EnrollmentServiceTests : IDisposable
     }
 
     #endregion
+
+    #region DAT-01: Group Capacity Concurrency & Race Condition Tests
+
+    [Fact]
+    public async Task CreateAsync_WhenGroupCapacityReachedWithinSynchronizationScope_ThrowsConflictException()
+    {
+        // Arrange: Create a group with Capacity = 1
+        var smallGroup = CourseGroup.Create(
+            _organizationId,
+            _courseGroup.CourseId,
+            "Small Group",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1),
+            capacity: 1);
+        await _dbContext.CourseGroups.AddAsync(smallGroup);
+
+        // Pre-fill with 1 active enrollment (reaching capacity)
+        var existingEnrollment = Enrollment.Create(_organizationId, smallGroup.Id, _student.Id, status: EnrollmentConstants.Statuses.Active);
+        await _dbContext.Enrollments.AddAsync(existingEnrollment);
+
+        // Second student
+        var user2 = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Bob",
+            LastName = "Jones",
+            Email = "bob@example.com",
+            IsActive = true
+        };
+        await _dbContext.ApplicationUsers.AddAsync(user2);
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-002");
+        await _dbContext.Students.AddAsync(student2);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new CreateEnrollmentDto
+        {
+            CourseGroupId = smallGroup.Id,
+            StudentId = student2.Id,
+            Status = EnrollmentConstants.Statuses.Active
+        };
+
+        // Act
+        var act = () => _service.CreateAsync(dto);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*has reached its maximum capacity*");
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenStudentAlreadyEnrolledWithinSynchronizationScope_ThrowsConflictException()
+    {
+        // Arrange
+        var existingEnrollment = Enrollment.Create(_organizationId, _courseGroup.Id, _student.Id, status: EnrollmentConstants.Statuses.Active);
+        await _dbContext.Enrollments.AddAsync(existingEnrollment);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new CreateEnrollmentDto
+        {
+            CourseGroupId = _courseGroup.Id,
+            StudentId = _student.Id,
+            Status = EnrollmentConstants.Statuses.Active
+        };
+
+        // Act
+        var act = () => _service.CreateAsync(dto);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*already enrolled in this course group*");
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenPreviousEnrollmentWasCancelled_DoesNotCountTowardsCapacity()
+    {
+        // Arrange: Group with Capacity = 1
+        var singleSlotGroup = CourseGroup.Create(
+            _organizationId,
+            _courseGroup.CourseId,
+            "Single Slot",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1),
+            capacity: 1);
+        await _dbContext.CourseGroups.AddAsync(singleSlotGroup);
+
+        // Pre-fill with a CANCELLED enrollment
+        var cancelledEnrollment = Enrollment.Create(_organizationId, singleSlotGroup.Id, _student.Id, status: EnrollmentConstants.Statuses.Cancelled);
+        await _dbContext.Enrollments.AddAsync(cancelledEnrollment);
+
+        // New student
+        var user2 = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Carol",
+            LastName = "Danvers",
+            Email = "carol@example.com",
+            IsActive = true
+        };
+        await _dbContext.ApplicationUsers.AddAsync(user2);
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-003");
+        await _dbContext.Students.AddAsync(student2);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new CreateEnrollmentDto
+        {
+            CourseGroupId = singleSlotGroup.Id,
+            StudentId = student2.Id,
+            Status = EnrollmentConstants.Statuses.Active
+        };
+
+        // Act
+        var result = await _service.CreateAsync(dto);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.StudentId.Should().Be(student2.Id);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ConcurrentEnrollmentsExceedingCapacity_EnforcesCapacityLimit()
+    {
+        // Arrange: Group with Capacity = 2
+        var capacity2Group = CourseGroup.Create(
+            _organizationId,
+            _courseGroup.CourseId,
+            "Capacity 2 Group",
+            new DateOnly(2026, 10, 1),
+            new DateOnly(2026, 12, 1),
+            capacity: 2);
+        await _dbContext.CourseGroups.AddAsync(capacity2Group);
+
+        // Create 5 distinct students
+        var studentIds = new List<Guid>();
+        for (int i = 1; i <= 5; i++)
+        {
+            var u = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                OrganizationId = _organizationId,
+                FirstName = $"Student{i}",
+                LastName = "Test",
+                Email = $"student{i}@example.com",
+                IsActive = true
+            };
+            await _dbContext.ApplicationUsers.AddAsync(u);
+            var s = Student.Create(u.Id, _organizationId, $"STU-C-{i}");
+            await _dbContext.Students.AddAsync(s);
+            studentIds.Add(s.Id);
+        }
+        await _dbContext.SaveChangesAsync();
+
+        // Act: Concurrently enroll all 5 students
+        var tasks = studentIds.Select(async sId =>
+        {
+            try
+            {
+                await _service.CreateAsync(new CreateEnrollmentDto
+                {
+                    CourseGroupId = capacity2Group.Id,
+                    StudentId = sId,
+                    Status = EnrollmentConstants.Statuses.Active
+                });
+                return true;
+            }
+            catch (ConflictException)
+            {
+                return false;
+            }
+        }).ToList();
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert: Exactly 2 succeed, exactly 3 fail with ConflictException
+        var successfulCount = results.Count(r => r);
+        var rejectedCount = results.Count(r => !r);
+
+        successfulCount.Should().Be(2);
+        rejectedCount.Should().Be(3);
+
+        var dbActiveEnrollments = _dbContext.Enrollments
+            .Count(e => e.CourseGroupId == capacity2Group.Id && e.Status != EnrollmentConstants.Statuses.Cancelled);
+        dbActiveEnrollments.Should().Be(2);
+    }
+
+    #endregion
 }
