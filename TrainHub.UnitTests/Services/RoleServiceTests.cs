@@ -235,4 +235,35 @@ public class RoleServiceTests : IDisposable
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*both Student and Instructor roles simultaneously*");
     }
+
+    [Fact]
+    public async Task GetPlatformUsersAsync_ReturnsOnlyUsersWithSuperAdminRole()
+    {
+        // Arrange
+        var superAdmin = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            UserName = "superadmin",
+            Email = "admin@platform.io",
+            FirstName = "Super",
+            LastName = "Admin",
+            IsActive = true
+        };
+        _dbContext.ApplicationUsers.Add(superAdmin);
+        _dbContext.SaveChanges();
+
+        _userManagerMock.Setup(m => m.GetRolesAsync(It.Is<ApplicationUser>(u => u.Id == superAdmin.Id)))
+            .ReturnsAsync(new List<string> { AppRoles.SuperAdmin });
+
+        _userManagerMock.Setup(m => m.GetRolesAsync(It.Is<ApplicationUser>(u => u.Id == _userId)))
+            .ReturnsAsync(new List<string> { AppRoles.OrgAdmin });
+
+        // Act
+        var result = await _service.GetPlatformUsersAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Should().ContainSingle(u => u.Email == "admin@platform.io" && u.Role == "Platform Super Admin");
+        result.Should().NotContain(u => u.Email == "test@example.com");
+    }
 }

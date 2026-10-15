@@ -14,6 +14,9 @@ builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration);
 
+// ── Health Checks ───────────────────────────────────────────────
+builder.Services.AddHealthChecks();
+
 // ── Authorization Policies ──────────────────────────────────────
 builder.Services.AddAuthorization(options =>
 {
@@ -186,6 +189,9 @@ app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/api/health");
 
 app.MapControllers();
 

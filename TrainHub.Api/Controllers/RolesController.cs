@@ -76,4 +76,17 @@ public class RolesController : ControllerBase
         await _roleService.RemoveRoleAsync(request.UserId, request.RoleName, cancellationToken);
         return Ok(new { message = $"Role '{request.RoleName}' removed successfully from user '{request.UserId}'." });
     }
+
+    /// <summary>
+    /// Gets all platform administrators and operations users.
+    /// Restricted to platform SuperAdmin.
+    /// </summary>
+    [HttpGet("users")]
+    [ProducesResponseType(typeof(IReadOnlyList<PlatformUserDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<PlatformUserDto>>> GetPlatformUsers(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP GET api/roles/users received.");
+        var users = await _roleService.GetPlatformUsersAsync(cancellationToken);
+        return Ok(users);
+    }
 }

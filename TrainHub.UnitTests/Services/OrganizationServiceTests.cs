@@ -135,4 +135,62 @@ public class OrganizationServiceTests : IDisposable
         var deleted = await _dbContext.Organizations.IgnoreQueryFilters().FirstOrDefaultAsync(o => o.Id == _clientOrgId);
         deleted.Should().BeNull();
     }
+
+    [Fact]
+    public async Task UpdateProfileAsync_WhenValidDto_UpdatesProfileFieldsSuccessfully()
+    {
+        // Arrange
+        var dto = new UpdateOrganizationProfileDto
+        {
+            Name = "New Profile Name",
+            Email = "contact@center.com",
+            Phone = "+1234567890",
+            Address = "123 Main Street",
+            LogoUrl = "https://center.com/logo.png"
+        };
+
+        // Act
+        var result = await _service.UpdateProfileAsync(_clientOrgId, dto);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Name.Should().Be("New Profile Name");
+        result.Email.Should().Be("contact@center.com");
+        result.Phone.Should().Be("+1234567890");
+        result.Address.Should().Be("123 Main Street");
+        result.LogoUrl.Should().Be("https://center.com/logo.png");
+        result.Slug.Should().Be("client-center"); // Preserved unchanged
+    }
+
+    [Fact]
+    public async Task UpdateProfileAsync_WhenNameIsBlank_ThrowsValidationException()
+    {
+        // Arrange
+        var dto = new UpdateOrganizationProfileDto
+        {
+            Name = "   "
+        };
+
+        // Act
+        var act = () => _service.UpdateProfileAsync(_clientOrgId, dto);
+
+        // Assert
+        await act.Should().ThrowAsync<ValidationException>();
+    }
+
+    [Fact]
+    public async Task UpdateProfileAsync_WhenNonExistent_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new UpdateOrganizationProfileDto
+        {
+            Name = "Valid Name"
+        };
+
+        // Act
+        var act = () => _service.UpdateProfileAsync(Guid.NewGuid(), dto);
+
+        // Assert
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
 }

@@ -173,4 +173,36 @@ public class RoleService : IRoleService
 
         return await _roleManager.RoleExistsAsync(roleName.Trim());
     }
+
+    public async Task<IReadOnlyList<PlatformUserDto>> GetPlatformUsersAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving platform users.");
+
+        var users = await _userManager.Users
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var result = new List<PlatformUserDto>();
+
+        foreach (var user in users)
+        {
+            var roles = await _userManager.GetRolesAsync(user);
+            if (roles.Contains(AppRoles.SuperAdmin))
+            {
+                result.Add(new PlatformUserDto
+                {
+                    Id = user.Id,
+                    Name = $"{user.FirstName} {user.LastName}".Trim(),
+                    Email = user.Email ?? string.Empty,
+                    Role = "Platform Super Admin",
+                    TwoFactor = user.TwoFactorEnabled,
+                    LastLogin = user.UpdatedAt.ToString("yyyy-MM-dd HH:mm"),
+                    Status = user.IsActive ? "Active" : "Inactive"
+                });
+            }
+        }
+
+        return result;
+    }
 }

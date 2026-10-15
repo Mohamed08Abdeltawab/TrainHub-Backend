@@ -120,6 +120,42 @@ public class OrganizationService : IOrganizationService
         return MapToDto(organization);
     }
 
+    public async Task<OrganizationDto> UpdateProfileAsync(Guid id, UpdateOrganizationProfileDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        _logger.LogInformation("Updating organization profile for ID '{OrganizationId}'.", id);
+
+        var organization = await _dbContext.Organizations
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+        if (organization == null)
+        {
+            _logger.LogWarning("Organization '{OrganizationId}' was not found for profile update.", id);
+            throw new NotFoundException(nameof(Organization), id);
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Trim().Length < 2)
+        {
+            throw new ValidationException(nameof(dto.Name), "Organization name must be at least 2 characters.");
+        }
+
+        organization.Name = dto.Name.Trim();
+        organization.Email = dto.Email?.Trim();
+        organization.Phone = dto.Phone?.Trim();
+        organization.Address = dto.Address?.Trim();
+        organization.LogoUrl = dto.LogoUrl?.Trim();
+        organization.UpdatedAt = DateTime.UtcNow;
+
+        _dbContext.Organizations.Update(organization);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Organization profile '{OrganizationId}' updated successfully.", id);
+
+        return MapToDto(organization);
+    }
+
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Deleting organization '{OrganizationId}'.", id);

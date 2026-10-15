@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Moq;
 using TrainHub.Application.Common.Exceptions;
@@ -517,5 +518,177 @@ public class EnrollmentServiceTests : IDisposable
         dbActiveEnrollments.Should().Be(2);
     }
 
+    [Fact]
+    public async Task CreateAsync_WhenSuccessful_CommitsAndDisposesTransaction()
+    {
+        // Arrange
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.CommitAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var testService = new TestableEnrollmentService(
+            _dbContext,
+            _validatorMock.Object,
+            _currentOrgServiceMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var dto = new CreateEnrollmentDto
+        {
+            CourseGroupId = _courseGroup.Id,
+            StudentId = _student.Id,
+            Status = EnrollmentConstants.Statuses.Active
+        };
+
+        // Act
+        var result = await testService.CreateAsync(dto);
+
+        // Assert
+        result.Should().NotBeNull();
+        mockTx.Verify(t => t.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Never);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenExceptionBeforeCommit_RollsBackAndDisposesTransaction()
+    {
+        // Arrange
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.CommitAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("Commit failed"));
+        mockTx.Setup(t => t.RollbackAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var testService = new TestableEnrollmentService(
+            _dbContext,
+            _validatorMock.Object,
+            _currentOrgServiceMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var dto = new CreateEnrollmentDto
+        {
+            CourseGroupId = _courseGroup.Id,
+            StudentId = _student.Id,
+            Status = EnrollmentConstants.Statuses.Active
+        };
+
+        // Act
+        var act = () => testService.CreateAsync(dto);
+
+        // Assert: Rolls back, disposes transaction, and rethrows original exception
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Commit failed");
+
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenResponseMaterializationFailsAfterCommit_DoesNotRollbackAndDisposesTransaction()
+    {
+        // Arrange: Successful commit, but response materialization query throws
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.CommitAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var testService = new TestableEnrollmentService(
+            _dbContext,
+            _validatorMock.Object,
+            _currentOrgServiceMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object,
+            materializeFunc: () => throw new InvalidOperationException("Materialization read failed"));
+
+        var dto = new CreateEnrollmentDto
+        {
+            CourseGroupId = _courseGroup.Id,
+            StudentId = _student.Id,
+            Status = EnrollmentConstants.Statuses.Active
+        };
+
+        // Act
+        var act = () => testService.CreateAsync(dto);
+
+        // Assert: Throws exception, does NOT return fake success, committed transaction is NOT rolled back
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Materialization read failed");
+
+        mockTx.Verify(t => t.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Never);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+
+        // The write was committed and remains in the database
+        var dbRecord = _dbContext.Enrollments.FirstOrDefault(e => e.CourseGroupId == _courseGroup.Id && e.StudentId == _student.Id);
+        dbRecord.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenRollbackThrows_DoesNotMaskOriginalException()
+    {
+        // Arrange: Failure before commit, and rollback also fails
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.CommitAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("Root failure during save"));
+        mockTx.Setup(t => t.RollbackAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new Exception("Network lost during rollback"));
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var testService = new TestableEnrollmentService(
+            _dbContext,
+            _validatorMock.Object,
+            _currentOrgServiceMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var dto = new CreateEnrollmentDto
+        {
+            CourseGroupId = _courseGroup.Id,
+            StudentId = _student.Id,
+            Status = EnrollmentConstants.Statuses.Active
+        };
+
+        // Act
+        var act = () => testService.CreateAsync(dto);
+
+        // Assert: Root exception is preserved, not masked by rollback failure
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Root failure during save");
+
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
     #endregion
+
+    private class TestableEnrollmentService : EnrollmentService
+    {
+        private readonly IDbContextTransaction? _transaction;
+        private readonly Func<Task<EnrollmentDto>>? _materializeFunc;
+
+        public TestableEnrollmentService(
+            ITrainHubDbContext dbContext,
+            IEnrollmentValidator validator,
+            ICurrentOrganizationService orgService,
+            ILogger<EnrollmentService> logger,
+            IDbContextTransaction? transaction = null,
+            Func<Task<EnrollmentDto>>? materializeFunc = null)
+            : base(dbContext, validator, orgService, logger)
+        {
+            _transaction = transaction;
+            _materializeFunc = materializeFunc;
+        }
+
+        protected override Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_transaction);
+        }
+
+        protected override Task<EnrollmentDto> MaterializeEnrollmentResponseAsync(Guid enrollmentId, CancellationToken cancellationToken)
+        {
+            if (_materializeFunc != null)
+            {
+                return _materializeFunc();
+            }
+            return base.MaterializeEnrollmentResponseAsync(enrollmentId, cancellationToken);
+        }
+    }
 }

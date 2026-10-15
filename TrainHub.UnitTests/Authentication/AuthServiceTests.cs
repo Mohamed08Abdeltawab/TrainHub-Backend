@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -1016,4 +1017,160 @@ public class AuthServiceTests
     }
 
     #endregion
+
+    #region Transaction Lifecycle Tests
+
+    [Fact]
+    public async Task RegisterAsync_WhenSuccessful_CommitsAndDisposesTransaction()
+    {
+        // Arrange
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.CommitAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var service = new TestableAuthService(
+            _userManagerMock.Object,
+            _jwtTokenGeneratorMock.Object,
+            _dbContext,
+            _jwtOptions,
+            _organizationValidatorMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var request = new RegisterRequest
+        {
+            FirstName = "Test",
+            LastName = "User",
+            Email = "testuser@example.com",
+            Password = "Password123!",
+            ConfirmPassword = "Password123!",
+            OrganizationName = "Test Org"
+        };
+
+        _userManagerMock.Setup(m => m.NormalizeEmail(request.Email)).Returns(request.Email.ToUpperInvariant());
+        _userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), request.Password)).ReturnsAsync(IdentityResult.Success);
+        _userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>())).ReturnsAsync(IdentityResult.Success);
+        _userManagerMock.Setup(m => m.UpdateAsync(It.IsAny<ApplicationUser>())).ReturnsAsync(IdentityResult.Success);
+        _jwtTokenGeneratorMock.Setup(j => j.GenerateToken(It.IsAny<ApplicationUser>(), It.IsAny<IEnumerable<string>>())).Returns("dummy-token");
+        _jwtTokenGeneratorMock.Setup(j => j.GenerateRefreshToken()).Returns("dummy-refresh-token");
+
+        // Act
+        var response = await service.RegisterAsync(request);
+
+        // Assert
+        response.Should().NotBeNull();
+        mockTx.Verify(t => t.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Never);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WhenExceptionBeforeCommit_RollsBackAndDisposesTransaction()
+    {
+        // Arrange
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.RollbackAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var service = new TestableAuthService(
+            _userManagerMock.Object,
+            _jwtTokenGeneratorMock.Object,
+            _dbContext,
+            _jwtOptions,
+            _organizationValidatorMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var request = new RegisterRequest
+        {
+            FirstName = "Fail",
+            LastName = "User",
+            Email = "failuser@example.com",
+            Password = "Password123!",
+            ConfirmPassword = "Password123!",
+            OrganizationName = "Fail Org"
+        };
+
+        _userManagerMock.Setup(m => m.NormalizeEmail(request.Email)).Returns(request.Email.ToUpperInvariant());
+        _userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), request.Password))
+            .ThrowsAsync(new InvalidOperationException("User creation failed"));
+
+        // Act
+        var act = () => service.RegisterAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("User creation failed");
+
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.CommitAsync(It.IsAny<CancellationToken>()), Times.Never);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WhenRollbackThrows_DoesNotMaskOriginalException()
+    {
+        // Arrange
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.RollbackAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new Exception("Network lost during rollback"));
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var service = new TestableAuthService(
+            _userManagerMock.Object,
+            _jwtTokenGeneratorMock.Object,
+            _dbContext,
+            _jwtOptions,
+            _organizationValidatorMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var request = new RegisterRequest
+        {
+            FirstName = "RollbackFail",
+            LastName = "User",
+            Email = "rollbackfail@example.com",
+            Password = "Password123!",
+            ConfirmPassword = "Password123!",
+            OrganizationName = "Rollback Fail Org"
+        };
+
+        _userManagerMock.Setup(m => m.NormalizeEmail(request.Email)).Returns(request.Email.ToUpperInvariant());
+        _userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), request.Password))
+            .ThrowsAsync(new InvalidOperationException("Root creation failure"));
+
+        // Act
+        var act = () => service.RegisterAsync(request);
+
+        // Assert: Root exception is preserved, not masked by rollback failure
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Root creation failure");
+
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
+    #endregion
+
+    private class TestableAuthService : AuthService
+    {
+        private readonly IDbContextTransaction? _transaction;
+
+        public TestableAuthService(
+            UserManager<ApplicationUser> userManager,
+            IJwtTokenGenerator jwtTokenGenerator,
+            ITrainHubDbContext dbContext,
+            IOptions<JwtSettings> jwtSettings,
+            IOrganizationValidator organizationValidator,
+            ILogger<AuthService> logger,
+            IDbContextTransaction? transaction = null)
+            : base(userManager, jwtTokenGenerator, dbContext, jwtSettings, organizationValidator, logger)
+        {
+            _transaction = transaction;
+        }
+
+        protected override Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_transaction);
+        }
+    }
 }

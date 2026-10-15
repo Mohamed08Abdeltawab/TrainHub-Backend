@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Common.Models;
@@ -134,102 +135,113 @@ public class EnrollmentService : IEnrollmentService
         var groupLock = _groupLocks.GetOrAdd(dto.CourseGroupId, _ => new SemaphoreSlim(1, 1));
         await groupLock.WaitAsync(cancellationToken);
 
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
-        try
+        var transaction = await BeginTransactionAsync(cancellationToken);
+        await using (transaction)
         {
-            if (_dbContext.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) != true)
+            var isCommitted = false;
+            Guid enrollmentId;
+
+            try
             {
-                try
+                // ── Re-verify active group capacity & uniqueness within synchronization scope ──
+                var courseGroup = await _dbContext.CourseGroups
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(cg => cg.Id == dto.CourseGroupId && cg.OrganizationId == organizationId.Value, cancellationToken);
+
+                if (courseGroup == null)
                 {
-                    transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+                    throw new NotFoundException("CourseGroup", dto.CourseGroupId);
                 }
-                catch
+
+                var activeEnrolledCount = await _dbContext.Enrollments
+                    .IgnoreQueryFilters()
+                    .CountAsync(e => e.CourseGroupId == dto.CourseGroupId && e.Status != EnrollmentConstants.Statuses.Cancelled, cancellationToken);
+
+                if (activeEnrolledCount >= courseGroup.Capacity)
                 {
-                    // Transactions may not be supported by the current database provider
+                    _logger.LogWarning("Concurrent enrollment rejected: Course group '{CourseGroupId}' reached capacity ({Capacity}).",
+                        dto.CourseGroupId, courseGroup.Capacity);
+                    throw new ConflictException($"Course group '{courseGroup.Name}' has reached its maximum capacity of {courseGroup.Capacity}.");
                 }
+
+                var alreadyEnrolled = await _dbContext.Enrollments
+                    .IgnoreQueryFilters()
+                    .AnyAsync(e => e.CourseGroupId == dto.CourseGroupId && e.StudentId == dto.StudentId, cancellationToken);
+
+                if (alreadyEnrolled)
+                {
+                    _logger.LogWarning("Concurrent enrollment rejected: Student '{StudentId}' is already enrolled in group '{CourseGroupId}'.",
+                        dto.StudentId, dto.CourseGroupId);
+                    throw new ConflictException("Student is already enrolled in this course group.");
+                }
+
+                var enrollment = Enrollment.Create(
+                    organizationId.Value,
+                    dto.CourseGroupId,
+                    dto.StudentId,
+                    dto.PaidAmount ?? 0m,
+                    dto.Status,
+                    dto.EnrollmentDate);
+
+                _dbContext.Enrollments.Add(enrollment);
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+
+                if (transaction != null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    isCommitted = true;
+                }
+
+                enrollmentId = enrollment.Id;
             }
-
-            // ── Re-verify active group capacity & uniqueness within synchronization scope ──
-            var courseGroup = await _dbContext.CourseGroups
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(cg => cg.Id == dto.CourseGroupId && cg.OrganizationId == organizationId.Value, cancellationToken);
-
-            if (courseGroup == null)
+            catch (DbUpdateException ex)
             {
-                throw new NotFoundException("CourseGroup", dto.CourseGroupId);
-            }
-
-            var activeEnrolledCount = await _dbContext.Enrollments
-                .IgnoreQueryFilters()
-                .CountAsync(e => e.CourseGroupId == dto.CourseGroupId && e.Status != EnrollmentConstants.Statuses.Cancelled, cancellationToken);
-
-            if (activeEnrolledCount >= courseGroup.Capacity)
-            {
-                _logger.LogWarning("Concurrent enrollment rejected: Course group '{CourseGroupId}' reached capacity ({Capacity}).",
-                    dto.CourseGroupId, courseGroup.Capacity);
-                throw new ConflictException($"Course group '{courseGroup.Name}' has reached its maximum capacity of {courseGroup.Capacity}.");
-            }
-
-            var alreadyEnrolled = await _dbContext.Enrollments
-                .IgnoreQueryFilters()
-                .AnyAsync(e => e.CourseGroupId == dto.CourseGroupId && e.StudentId == dto.StudentId, cancellationToken);
-
-            if (alreadyEnrolled)
-            {
-                _logger.LogWarning("Concurrent enrollment rejected: Student '{StudentId}' is already enrolled in group '{CourseGroupId}'.",
-                    dto.StudentId, dto.CourseGroupId);
+                if (transaction != null && !isCommitted)
+                {
+                    try
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError(rollbackEx, "Failed to roll back transaction for enrollment during DB update exception: {OriginalError}.", ex.Message);
+                    }
+                }
+                _logger.LogWarning(ex, "Failed to create enrollment due to database conflict (duplicate enrollment constraint).");
                 throw new ConflictException("Student is already enrolled in this course group.");
             }
-
-            var enrollment = Enrollment.Create(
-                organizationId.Value,
-                dto.CourseGroupId,
-                dto.StudentId,
-                dto.PaidAmount ?? 0m,
-                dto.Status,
-                dto.EnrollmentDate);
-
-            _dbContext.Enrollments.Add(enrollment);
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            if (transaction != null)
+            catch (Exception ex)
             {
-                await transaction.CommitAsync(cancellationToken);
+                if (transaction != null && !isCommitted)
+                {
+                    try
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError(rollbackEx, "Failed to roll back transaction for enrollment during exception: {OriginalError}.", ex.Message);
+                    }
+                }
+                throw;
+            }
+            finally
+            {
+                groupLock.Release();
             }
 
-            _logger.LogInformation("Enrollment '{EnrollmentId}' created successfully.", enrollment.Id);
+            _logger.LogInformation("Enrollment '{EnrollmentId}' created successfully.", enrollmentId);
 
-            var created = await _dbContext.Enrollments
-                .AsNoTracking()
-                .Include(e => e.CourseGroup)
-                    .ThenInclude(cg => cg.Course)
-                .Include(e => e.Student)
-                    .ThenInclude(s => s.User)
-                .FirstAsync(e => e.Id == enrollment.Id, cancellationToken);
-
-            return MapToDto(created);
-        }
-        catch (DbUpdateException ex)
-        {
-            if (transaction != null)
+            try
             {
-                await transaction.RollbackAsync(cancellationToken);
+                return await MaterializeEnrollmentResponseAsync(enrollmentId, cancellationToken);
             }
-            _logger.LogWarning(ex, "Failed to create enrollment due to database conflict (duplicate enrollment constraint).");
-            throw new ConflictException("Student is already enrolled in this course group.");
-        }
-        catch
-        {
-            if (transaction != null)
+            catch (Exception ex)
             {
-                await transaction.RollbackAsync(cancellationToken);
+                _logger.LogError(ex, "Enrollment was committed successfully with ID '{EnrollmentId}', but an error occurred while materializing the response.", enrollmentId);
+                throw;
             }
-            throw;
-        }
-        finally
-        {
-            groupLock.Release();
         }
     }
 
@@ -317,6 +329,38 @@ public class EnrollmentService : IEnrollmentService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Enrollment '{EnrollmentId}' deleted successfully.", id);
+    }
+
+    protected virtual async Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken cancellationToken)
+    {
+        if (_dbContext.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Database provider '{Provider}' does not support explicit transactions; proceeding without explicit transaction.",
+                _dbContext.Database.ProviderName);
+            return null;
+        }
+    }
+
+    protected virtual async Task<EnrollmentDto> MaterializeEnrollmentResponseAsync(Guid enrollmentId, CancellationToken cancellationToken)
+    {
+        var created = await _dbContext.Enrollments
+            .AsNoTracking()
+            .Include(e => e.CourseGroup)
+                .ThenInclude(cg => cg.Course)
+            .Include(e => e.Student)
+                .ThenInclude(s => s.User)
+            .FirstAsync(e => e.Id == enrollmentId, cancellationToken);
+
+        return MapToDto(created);
     }
 
     private static EnrollmentDto MapToDto(Enrollment enrollment, CourseGroup? group = null, Student? student = null)

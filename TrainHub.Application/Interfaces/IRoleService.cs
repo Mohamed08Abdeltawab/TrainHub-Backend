@@ -31,4 +31,9 @@ public interface IRoleService
     /// Checks whether a given role exists.
     /// </summary>
     Task<bool> RoleExistsAsync(string roleName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves all platform administrators and operations users.
+    /// </summary>
+    Task<IReadOnlyList<PlatformUserDto>> GetPlatformUsersAsync(CancellationToken cancellationToken = default);
 }

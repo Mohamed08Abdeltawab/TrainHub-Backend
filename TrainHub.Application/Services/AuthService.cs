@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TrainHub.Application.Common.Exceptions;
@@ -98,21 +99,12 @@ public class AuthService : IAuthService
         ApplicationUser? createdUser = null;
         Student? createdStudent = null;
 
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
-        try
+        var transaction = await BeginTransactionAsync(cancellationToken);
+        await using (transaction)
         {
-            if (_dbContext.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) != true)
+            var isCommitted = false;
+            try
             {
-                transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            }
-        }
-        catch
-        {
-            // Transactions not supported on current database provider (e.g. test provider)
-        }
-
-        try
-        {
             if (!hasExplicitOrgId)
             {
                 // ── Mode A: Self-service Training Center Onboarding ──
@@ -246,6 +238,7 @@ public class AuthService : IAuthService
             if (transaction != null)
             {
                 await transaction.CommitAsync(cancellationToken);
+                isCommitted = true;
             }
 
             _logger.LogInformation("Registration completed successfully for user '{UserId}' in organization '{OrgId}'.", user.Id, targetOrgId);
@@ -268,13 +261,20 @@ public class AuthService : IAuthService
                 Roles = roles
             };
         }
-        catch
+        catch (Exception ex)
         {
-            if (transaction != null)
+            if (transaction != null && !isCommitted)
             {
-                await transaction.RollbackAsync(cancellationToken);
+                try
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx, "Failed to roll back transaction for user registration: {OriginalError}.", ex.Message);
+                }
             }
-            else
+            else if (!isCommitted)
             {
                 // In-memory or non-relational compensating rollback
                 if (createdStudent != null)
@@ -294,6 +294,7 @@ public class AuthService : IAuthService
             }
             throw;
         }
+    }
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
@@ -476,6 +477,25 @@ public class AuthService : IAuthService
         {
             _logger.LogWarning("Logout failed for user '{UserId}': Mismatched refresh token.", targetUserId);
             throw new UnauthorizedAccessException("Invalid refresh token.");
+        }
+    }
+
+    protected virtual async Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken cancellationToken)
+    {
+        if (_dbContext.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Database provider '{Provider}' does not support explicit transactions; proceeding without explicit transaction.",
+                _dbContext.Database.ProviderName);
+            return null;
         }
     }
 }
