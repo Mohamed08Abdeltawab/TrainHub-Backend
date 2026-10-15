@@ -712,9 +712,10 @@ public class AttendanceValidator : IAttendanceValidator
         Guid organizationId,
         CancellationToken cancellationToken)
     {
-        if (!currentUserId.HasValue)
+        if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty)
         {
-            return;
+            _logger.LogWarning("Validation failed: User identity is required to manage attendance for session '{SessionId}'.", session.Id);
+            throw new UnauthorizedAccessException("User identity is required to manage attendance.");
         }
 
         var caller = await ResolveCallerPermissionsAsync(currentUserId.Value, organizationId, cancellationToken);

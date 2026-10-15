@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Moq;
 using TrainHub.Application.Common.Exceptions;
@@ -595,6 +596,201 @@ public class AttendanceServiceTests : IDisposable
         dbCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task SaveBatchAsync_WithActiveTransaction_CommitsAndDisposesTransactionOnSuccess()
+    {
+        // Arrange: Transaction mock to verify commit and disposal lifecycle
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.CommitAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var testService = new TestableAttendanceService(
+            _dbContext,
+            _validatorMock.Object,
+            _currentOrgServiceMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act
+        var result = await testService.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert
+        result.Should().HaveCount(1);
+        mockTx.Verify(t => t.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Never);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveBatchAsync_WhenPersistenceFailsBeforeCommit_RollsBackAndDisposesTransaction()
+    {
+        // Arrange: Transaction mock where commit throws
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.CommitAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("Commit failed"));
+        mockTx.Setup(t => t.RollbackAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var testService = new TestableAttendanceService(
+            _dbContext,
+            _validatorMock.Object,
+            _currentOrgServiceMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act
+        var act = () => testService.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert: Rolls back, disposes transaction, and rethrows original exception
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Commit failed");
+
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveBatchAsync_WhenResponseMaterializationFailsAfterCommit_DoesNotRollbackAndDisposesTransaction()
+    {
+        // Arrange: Successful commit, but response materialization query throws (e.g. read timeout/cancellation)
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.CommitAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var testService = new TestableAttendanceService(
+            _dbContext,
+            _validatorMock.Object,
+            _currentOrgServiceMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object,
+            materializeFunc: () => throw new InvalidOperationException("Materialization read failed"));
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act
+        var act = () => testService.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert: Throws exception, does NOT return fake success, committed transaction is NOT rolled back
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Materialization read failed");
+
+        mockTx.Verify(t => t.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Never);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+
+        // The write was committed and remains in the database
+        var dbRecord = _dbContext.AttendanceRecords.FirstOrDefault(a => a.SessionId == _session.Id && a.StudentId == _student.Id);
+        dbRecord.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SaveBatchAsync_WhenRollbackThrows_DoesNotMaskOriginalException()
+    {
+        // Arrange: Failure before commit, and rollback also fails
+        var mockTx = new Mock<IDbContextTransaction>();
+        mockTx.Setup(t => t.CommitAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("Root failure during save"));
+        mockTx.Setup(t => t.RollbackAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new Exception("Network lost during rollback"));
+        mockTx.Setup(t => t.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var testService = new TestableAttendanceService(
+            _dbContext,
+            _validatorMock.Object,
+            _currentOrgServiceMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act
+        var act = () => testService.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert: Root exception is preserved, not masked by rollback failure
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Root failure during save");
+
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTx.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveBatchAsync_WhenEmptyRecords_ThrowsValidationExceptionWithoutStartingTransaction()
+    {
+        // Arrange
+        var mockTx = new Mock<IDbContextTransaction>();
+
+        var testService = new TestableAttendanceService(
+            _dbContext,
+            _validatorMock.Object,
+            _currentOrgServiceMock.Object,
+            _loggerMock.Object,
+            transaction: mockTx.Object);
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = []
+        };
+
+        // Act
+        var act = () => testService.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert
+        await act.Should().ThrowAsync<ValidationException>();
+        mockTx.Verify(t => t.CommitAsync(It.IsAny<CancellationToken>()), Times.Never);
+        mockTx.Verify(t => t.RollbackAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     #endregion
+
+    private class TestableAttendanceService : AttendanceService
+    {
+        private readonly IDbContextTransaction? _transaction;
+        private readonly Func<Task<IReadOnlyList<AttendanceDto>>>? _materializeFunc;
+
+        public TestableAttendanceService(
+            ITrainHubDbContext dbContext,
+            IAttendanceValidator validator,
+            ICurrentOrganizationService orgService,
+            ILogger<AttendanceService> logger,
+            IDbContextTransaction? transaction = null,
+            Func<Task<IReadOnlyList<AttendanceDto>>>? materializeFunc = null)
+            : base(dbContext, validator, orgService, logger)
+        {
+            _transaction = transaction;
+            _materializeFunc = materializeFunc;
+        }
+
+        protected override Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_transaction);
+        }
+
+        protected override Task<IReadOnlyList<AttendanceDto>> MaterializeBatchResponseAsync(
+            Guid sessionId,
+            Guid organizationId,
+            List<Guid> studentIds,
+            CancellationToken cancellationToken)
+        {
+            if (_materializeFunc != null)
+            {
+                return _materializeFunc();
+            }
+            return base.MaterializeBatchResponseAsync(sessionId, organizationId, studentIds, cancellationToken);
+        }
+    }
 }
 

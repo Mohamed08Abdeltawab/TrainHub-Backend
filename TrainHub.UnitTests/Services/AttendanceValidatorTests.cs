@@ -312,7 +312,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*cancelled session*");
     }
@@ -338,7 +338,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*draft session*");
     }
@@ -358,7 +358,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*cancelled course group*");
     }
@@ -378,7 +378,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*inactive*");
     }
@@ -398,7 +398,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*enrollment is pending*");
     }
@@ -415,7 +415,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*Student*not found*");
     }
@@ -448,7 +448,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*not enrolled in the course group*");
     }
@@ -468,7 +468,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*enrollment is cancelled*");
     }
@@ -493,7 +493,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateCreateAsync(dto, _organizationId);
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*already exists for this student in this session*");
     }
@@ -552,7 +552,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateUpdateAsync(record.Id, dto, _organizationId);
+        var act = () => _validator.ValidateUpdateAsync(record.Id, dto, _organizationId, _instructorUser.Id);
         await act.Should().NotThrowAsync();
     }
 
@@ -563,7 +563,7 @@ public class AttendanceValidatorTests : IDisposable
         var dto = new UpdateAttendanceDto { Status = AttendanceConstants.Statuses.Present };
 
         // Act & Assert
-        var act = () => _validator.ValidateUpdateAsync(Guid.NewGuid(), dto, _organizationId);
+        var act = () => _validator.ValidateUpdateAsync(Guid.NewGuid(), dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*AttendanceRecord*not found*");
     }
@@ -581,7 +581,7 @@ public class AttendanceValidatorTests : IDisposable
         var dto = new UpdateAttendanceDto { Status = AttendanceConstants.Statuses.Late };
 
         // Act & Assert
-        var act = () => _validator.ValidateUpdateAsync(record.Id, dto, _organizationId);
+        var act = () => _validator.ValidateUpdateAsync(record.Id, dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*cancelled session*");
     }
@@ -599,7 +599,7 @@ public class AttendanceValidatorTests : IDisposable
         var dto = new UpdateAttendanceDto { Status = AttendanceConstants.Statuses.Late };
 
         // Act & Assert
-        var act = () => _validator.ValidateUpdateAsync(record.Id, dto, _organizationId);
+        var act = () => _validator.ValidateUpdateAsync(record.Id, dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*cancelled course group*");
     }
@@ -617,7 +617,7 @@ public class AttendanceValidatorTests : IDisposable
         var dto = new UpdateAttendanceDto { Status = AttendanceConstants.Statuses.Late };
 
         // Act & Assert
-        var act = () => _validator.ValidateUpdateAsync(record.Id, dto, _organizationId);
+        var act = () => _validator.ValidateUpdateAsync(record.Id, dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*enrollment is cancelled*");
     }
@@ -635,7 +635,7 @@ public class AttendanceValidatorTests : IDisposable
         await _dbContext.SaveChangesAsync();
 
         // Act & Assert
-        var act = () => _validator.ValidateUpdateStatusAsync(record.Id, AttendanceConstants.Statuses.Excused, _organizationId);
+        var act = () => _validator.ValidateUpdateStatusAsync(record.Id, AttendanceConstants.Statuses.Excused, _organizationId, _instructorUser.Id);
         await act.Should().NotThrowAsync();
     }
 
@@ -643,7 +643,7 @@ public class AttendanceValidatorTests : IDisposable
     public async Task ValidateUpdateStatusAsync_WithInvalidStatus_ThrowsValidationException()
     {
         // Act & Assert
-        var act = () => _validator.ValidateUpdateStatusAsync(Guid.NewGuid(), 99, _organizationId);
+        var act = () => _validator.ValidateUpdateStatusAsync(Guid.NewGuid(), 99, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ValidationException>()
             .Where(ex => ex.Errors.ContainsKey("status"));
     }
@@ -659,7 +659,7 @@ public class AttendanceValidatorTests : IDisposable
         await _dbContext.SaveChangesAsync();
 
         // Act & Assert
-        var act = () => _validator.ValidateUpdateStatusAsync(record.Id, AttendanceConstants.Statuses.Excused, _organizationId);
+        var act = () => _validator.ValidateUpdateStatusAsync(record.Id, AttendanceConstants.Statuses.Excused, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*cancelled course group*");
     }
@@ -675,7 +675,7 @@ public class AttendanceValidatorTests : IDisposable
         await _dbContext.SaveChangesAsync();
 
         // Act & Assert
-        var act = () => _validator.ValidateUpdateStatusAsync(record.Id, AttendanceConstants.Statuses.Excused, _organizationId);
+        var act = () => _validator.ValidateUpdateStatusAsync(record.Id, AttendanceConstants.Statuses.Excused, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*enrollment is cancelled*");
     }
@@ -693,7 +693,7 @@ public class AttendanceValidatorTests : IDisposable
         await _dbContext.SaveChangesAsync();
 
         // Act & Assert
-        var act = () => _validator.ValidateDeleteAsync(record.Id, _organizationId);
+        var act = () => _validator.ValidateDeleteAsync(record.Id, _organizationId, _instructorUser.Id);
         await act.Should().NotThrowAsync();
     }
 
@@ -701,7 +701,7 @@ public class AttendanceValidatorTests : IDisposable
     public async Task ValidateDeleteAsync_WhenRecordDoesNotExist_ThrowsNotFoundException()
     {
         // Act & Assert
-        var act = () => _validator.ValidateDeleteAsync(Guid.NewGuid(), _organizationId);
+        var act = () => _validator.ValidateDeleteAsync(Guid.NewGuid(), _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*AttendanceRecord*not found*");
     }
@@ -717,7 +717,7 @@ public class AttendanceValidatorTests : IDisposable
         await _dbContext.SaveChangesAsync();
 
         // Act & Assert
-        var act = () => _validator.ValidateDeleteAsync(record.Id, _organizationId);
+        var act = () => _validator.ValidateDeleteAsync(record.Id, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*cancelled session*");
     }
@@ -1057,7 +1057,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*Cannot record attendance for a cancelled session*");
     }
@@ -1076,7 +1076,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*Student*not found*");
     }
@@ -1108,7 +1108,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*Student is not enrolled in the course group for this session*");
     }
@@ -1142,7 +1142,7 @@ public class AttendanceValidatorTests : IDisposable
         };
 
         // Act & Assert
-        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, _instructorUser.Id);
         await act.Should().ThrowAsync<ConflictException>()
             .WithMessage("*enrollment is cancelled*");
     }
@@ -1176,6 +1176,152 @@ public class AttendanceValidatorTests : IDisposable
         var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, otherUser.Id);
         await act.Should().ThrowAsync<ForbiddenAccessException>()
             .WithMessage("*not authorized to manage attendance for this session*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenCurrentUserIdIsNull_ThrowsUnauthorizedAccessException()
+    {
+        // Arrange: anonymous or missing caller ID
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, currentUserId: null);
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*User identity is required*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenCurrentUserIdIsEmpty_ThrowsUnauthorizedAccessException()
+    {
+        // Arrange: empty GUID caller ID
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, currentUserId: Guid.Empty);
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*User identity is required*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenCallerHasNoInstructorProfile_ThrowsForbiddenAccessException()
+    {
+        // Arrange: standard non-instructor user without OrgAdmin role
+        var plainUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "plain_user@test.com",
+            FirstName = "Plain",
+            LastName = "User"
+        };
+        _dbContext.ApplicationUsers.Add(plainUser);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, plainUser.Id);
+        await act.Should().ThrowAsync<ForbiddenAccessException>()
+            .WithMessage("*not authorized to manage attendance for this session*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenCallerIsAssignedToCourseGroup_DoesNotThrow()
+    {
+        // Arrange: Create a group instructor distinct from session instructor
+        var groupInstructorUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "group_inst@test.com",
+            FirstName = "Group",
+            LastName = "Instructor"
+        };
+        _dbContext.ApplicationUsers.Add(groupInstructorUser);
+        var groupInstructor = Instructor.Create(groupInstructorUser.Id, _organizationId, "Lead");
+        _dbContext.Instructors.Add(groupInstructor);
+
+        // Assign to course group while session has _instructor
+        _courseGroup.AssignInstructor(groupInstructor.Id);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act & Assert: Group instructor is authorized even if session has different instructor
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, groupInstructorUser.Id);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenCallerIsOrgAdmin_DoesNotThrow()
+    {
+        // Arrange: User with OrgAdmin role
+        var orgAdminUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "org_admin@test.com",
+            FirstName = "Org",
+            LastName = "Admin"
+        };
+        _dbContext.ApplicationUsers.Add(orgAdminUser);
+        await _dbContext.SaveChangesAsync();
+
+        _userManagerMock.Setup(m => m.FindByIdAsync(orgAdminUser.Id.ToString()))
+            .ReturnsAsync(orgAdminUser);
+        _userManagerMock.Setup(m => m.IsInRoleAsync(orgAdminUser, AppRoles.OrgAdmin))
+            .ReturnsAsync(true);
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, orgAdminUser.Id);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenCallerIsSuperAdmin_DoesNotThrow()
+    {
+        // Arrange: User with SuperAdmin role
+        var superAdminUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "super_admin@test.com",
+            FirstName = "Super",
+            LastName = "Admin"
+        };
+        _dbContext.ApplicationUsers.Add(superAdminUser);
+        await _dbContext.SaveChangesAsync();
+
+        _userManagerMock.Setup(m => m.FindByIdAsync(superAdminUser.Id.ToString()))
+            .ReturnsAsync(superAdminUser);
+        _userManagerMock.Setup(m => m.IsInRoleAsync(superAdminUser, AppRoles.SuperAdmin))
+            .ReturnsAsync(true);
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, superAdminUser.Id);
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
