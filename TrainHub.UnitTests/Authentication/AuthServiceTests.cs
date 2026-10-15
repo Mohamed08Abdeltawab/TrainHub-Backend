@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -70,7 +71,7 @@ public class AuthServiceTests
         };
 
         _organizationValidatorMock
-            .Setup(v => v.ValidateOrganizationActiveAsync(request.OrganizationId, It.IsAny<CancellationToken>()))
+            .Setup(v => v.ValidateOrganizationActiveAsync(request.OrganizationId!.Value, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new BadRequestException("Organization is currently inactive."));
 
         var service = CreateService();
@@ -202,6 +203,203 @@ public class AuthServiceTests
 
         _userManagerMock.Verify(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), AppRoles.Student), Times.Once);
         _userManagerMock.Verify(m => m.UpdateAsync(It.Is<ApplicationUser>(u => u.RefreshToken == "fake-refresh-token")), Times.Once);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WithOrganizationName_CreatesNewOrganizationAndAssignsOrgAdminRole()
+    {
+        // Arrange
+        var request = new RegisterRequest
+        {
+            FirstName = "Founder",
+            LastName = "Leader",
+            Email = "founder@newcenter.com",
+            Password = "StrongPassword123!",
+            ConfirmPassword = "StrongPassword123!",
+            OrganizationName = "Alpha Academy"
+        };
+
+        _userManagerMock.Setup(m => m.FindByEmailAsync(request.Email))
+            .ReturnsAsync((ApplicationUser?)null);
+
+        _userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), request.Password))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), AppRoles.OrgAdmin))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _jwtTokenGeneratorMock.Setup(g => g.GenerateToken(It.IsAny<ApplicationUser>(), It.IsAny<IEnumerable<string>>(), null))
+            .Returns("fake-jwt-token");
+
+        _jwtTokenGeneratorMock.Setup(g => g.GenerateRefreshToken())
+            .Returns("fake-refresh-token");
+
+        _userManagerMock.Setup(m => m.UpdateAsync(It.IsAny<ApplicationUser>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        var service = CreateService();
+
+        // Act
+        var result = await service.RegisterAsync(request);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.OrganizationName.Should().Be("Alpha Academy");
+        result.Roles.Should().Contain(AppRoles.OrgAdmin);
+
+        _userManagerMock.Verify(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), AppRoles.OrgAdmin), Times.Once);
+
+        // Verify organization was persisted
+        var createdOrg = await _dbContext.Organizations.FindAsync(result.OrganizationId);
+        createdOrg.Should().NotBeNull();
+        createdOrg!.Name.Should().Be("Alpha Academy");
+        createdOrg.Slug.Should().Be("alpha-academy");
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WhenStudentRoleAssigned_CreatesStudentDomainEntity()
+    {
+        // Arrange
+        var org = new Organization
+        {
+            Id = Guid.NewGuid(),
+            Name = "Existing Center",
+            Slug = "existing-center",
+            IsActive = true
+        };
+        _dbContext.Organizations.Add(org);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new RegisterRequest
+        {
+            FirstName = "Student",
+            LastName = "One",
+            Email = "student1@existing.com",
+            Password = "StrongPassword123!",
+            ConfirmPassword = "StrongPassword123!",
+            OrganizationId = org.Id
+        };
+
+        _userManagerMock.Setup(m => m.FindByEmailAsync(request.Email))
+            .ReturnsAsync((ApplicationUser?)null);
+
+        _userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), request.Password))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), AppRoles.Student))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _jwtTokenGeneratorMock.Setup(g => g.GenerateToken(It.IsAny<ApplicationUser>(), It.IsAny<IEnumerable<string>>(), null))
+            .Returns("fake-jwt-token");
+
+        _jwtTokenGeneratorMock.Setup(g => g.GenerateRefreshToken())
+            .Returns("fake-refresh-token");
+
+        _userManagerMock.Setup(m => m.UpdateAsync(It.IsAny<ApplicationUser>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        var service = CreateService();
+
+        // Act
+        var result = await service.RegisterAsync(request);
+
+        // Assert
+        result.Should().NotBeNull();
+        var studentEntity = await _dbContext.Students.FirstOrDefaultAsync(s => s.UserId == result.UserId);
+        studentEntity.Should().NotBeNull();
+        studentEntity!.OrganizationId.Should().Be(org.Id);
+        studentEntity.StudentCode.Should().StartWith("STU-");
+    }
+
+    [Theory]
+    [InlineData("SuperAdmin")]
+    [InlineData("OrgAdmin")]
+    public async Task RegisterAsync_WhenAttemptingAdministrativeRoleEscalation_ThrowsBadRequestException(string forbiddenRole)
+    {
+        // Arrange
+        var request = new RegisterRequest
+        {
+            FirstName = "Attacker",
+            LastName = "User",
+            Email = "attacker@example.com",
+            Password = "StrongPassword123!",
+            ConfirmPassword = "StrongPassword123!",
+            OrganizationName = "Hacker Org",
+            Role = forbiddenRole
+        };
+
+        var service = CreateService();
+
+        // Act
+        var act = () => service.RegisterAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*Administrative roles cannot be assigned via registration*");
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WhenAttemptingPlatformOrganizationRegistration_ThrowsBadRequestException()
+    {
+        // Arrange
+        var platformOrg = new Organization
+        {
+            Id = Guid.NewGuid(),
+            Name = "Platform",
+            Slug = "platform",
+            IsActive = true
+        };
+        _dbContext.Organizations.Add(platformOrg);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new RegisterRequest
+        {
+            FirstName = "Infiltrator",
+            LastName = "User",
+            Email = "infiltrator@example.com",
+            Password = "StrongPassword123!",
+            ConfirmPassword = "StrongPassword123!",
+            OrganizationId = platformOrg.Id
+        };
+
+        var service = CreateService();
+
+        // Act
+        var act = () => service.RegisterAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*platform organization*not allowed*");
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WhenUserCreationFailsDuringNewOrg_RollsBackCreatedOrganization()
+    {
+        // Arrange
+        var request = new RegisterRequest
+        {
+            FirstName = "Failed",
+            LastName = "User",
+            Email = "failed@example.com",
+            Password = "Weak",
+            ConfirmPassword = "Weak",
+            OrganizationName = "Ephemeral Org"
+        };
+
+        _userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), request.Password))
+            .ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Creation error" }));
+
+        var service = CreateService();
+
+        // Act
+        var act = () => service.RegisterAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>();
+
+        // Verify organization was rolled back and deleted
+        var orgExists = await _dbContext.Organizations.AnyAsync(o => o.Name == "Ephemeral Org");
+        orgExists.Should().BeFalse();
     }
 
     #endregion

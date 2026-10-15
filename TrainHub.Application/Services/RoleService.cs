@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Roles.DTOs;
 using TrainHub.Application.Interfaces;
+using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
 
 namespace TrainHub.Application.Services;
@@ -95,6 +96,24 @@ public class RoleService : IRoleService
         {
             _logger.LogWarning("User '{UserId}' is already assigned to role '{RoleName}'.", userId, normalizedRole);
             throw new ConflictException($"User '{user.UserName ?? userId.ToString()}' is already in role '{normalizedRole}'.");
+        }
+
+        // Enforce mutual exclusivity between Instructor and Student roles
+        if (normalizedRole.Equals(AppRoles.Instructor, StringComparison.OrdinalIgnoreCase))
+        {
+            if (await _userManager.IsInRoleAsync(user, AppRoles.Student))
+            {
+                _logger.LogWarning("Cannot assign role '{RoleName}' to user '{UserId}' because they already hold the Student role.", normalizedRole, userId);
+                throw new ConflictException("A user cannot be assigned both Instructor and Student roles simultaneously.");
+            }
+        }
+        else if (normalizedRole.Equals(AppRoles.Student, StringComparison.OrdinalIgnoreCase))
+        {
+            if (await _userManager.IsInRoleAsync(user, AppRoles.Instructor))
+            {
+                _logger.LogWarning("Cannot assign role '{RoleName}' to user '{UserId}' because they already hold the Instructor role.", normalizedRole, userId);
+                throw new ConflictException("A user cannot be assigned both Student and Instructor roles simultaneously.");
+            }
         }
 
         var result = await _userManager.AddToRoleAsync(user, normalizedRole);

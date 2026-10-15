@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using TrainHub.Domain.Models;
 
 namespace TrainHub.Application.Interfaces;
@@ -18,6 +19,8 @@ public interface ITrainHubDbContext
     DbSet<Organization> Organizations { get; }
     DbSet<Session> Sessions { get; }
     DbSet<Student> Students { get; }
+
+    DatabaseFacade Database { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

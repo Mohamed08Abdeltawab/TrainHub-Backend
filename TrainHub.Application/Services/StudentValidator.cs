@@ -111,6 +111,17 @@ public class StudentValidator : IStudentValidator
                 trimmedCode, organizationId);
             throw new ConflictException($"A student with code '{trimmedCode}' already exists in this organization.");
         }
+
+        // 5. Verify User is not registered as an instructor (mutual exclusivity)
+        var instructorExistsForUser = await _dbContext.Instructors
+            .IgnoreQueryFilters()
+            .AnyAsync(i => i.UserId == dto.UserId, cancellationToken);
+
+        if (instructorExistsForUser)
+        {
+            _logger.LogWarning("Validation failed: User '{UserId}' is already registered as an instructor.", dto.UserId);
+            throw new ConflictException($"User with ID '{dto.UserId}' is already registered as an instructor. A user cannot be both a student and an instructor.");
+        }
     }
 
     public async Task ValidateUpdateAsync(Guid id, UpdateStudentDto dto, Guid organizationId, CancellationToken cancellationToken = default)

@@ -197,4 +197,42 @@ public class RoleServiceTests : IDisposable
         // Assert
         await act.Should().ThrowAsync<BadRequestException>();
     }
+
+    [Fact]
+    public async Task AssignRoleAsync_WhenUserHasStudentRoleAndAssigningInstructor_ThrowsConflictException()
+    {
+        // Arrange
+        _roleManagerMock.Setup(m => m.RoleExistsAsync(AppRoles.Instructor))
+            .ReturnsAsync(true);
+        _userManagerMock.Setup(m => m.IsInRoleAsync(It.Is<ApplicationUser>(u => u.Id == _userId), AppRoles.Instructor))
+            .ReturnsAsync(false);
+        _userManagerMock.Setup(m => m.IsInRoleAsync(It.Is<ApplicationUser>(u => u.Id == _userId), AppRoles.Student))
+            .ReturnsAsync(true);
+
+        // Act
+        var act = () => _service.AssignRoleAsync(_userId, AppRoles.Instructor);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*both Instructor and Student roles simultaneously*");
+    }
+
+    [Fact]
+    public async Task AssignRoleAsync_WhenUserHasInstructorRoleAndAssigningStudent_ThrowsConflictException()
+    {
+        // Arrange
+        _roleManagerMock.Setup(m => m.RoleExistsAsync(AppRoles.Student))
+            .ReturnsAsync(true);
+        _userManagerMock.Setup(m => m.IsInRoleAsync(It.Is<ApplicationUser>(u => u.Id == _userId), AppRoles.Student))
+            .ReturnsAsync(false);
+        _userManagerMock.Setup(m => m.IsInRoleAsync(It.Is<ApplicationUser>(u => u.Id == _userId), AppRoles.Instructor))
+            .ReturnsAsync(true);
+
+        // Act
+        var act = () => _service.AssignRoleAsync(_userId, AppRoles.Student);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*both Student and Instructor roles simultaneously*");
+    }
 }

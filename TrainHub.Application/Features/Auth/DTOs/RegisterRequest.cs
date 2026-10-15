@@ -28,8 +28,29 @@ public class RegisterRequest
     [Compare(nameof(Password), ErrorMessage = "Passwords do not match.")]
     public string ConfirmPassword { get; set; } = string.Empty;
 
-    [Required]
-    public Guid OrganizationId { get; set; }
+    /// <summary>
+    /// Existing organization ID when registering into a specific center.
+    /// If omitted or Guid.Empty, OrganizationName (or Organization) must be provided to create a new center.
+    /// </summary>
+    public Guid? OrganizationId { get; set; }
+
+    /// <summary>
+    /// Name of the new organization to create for self-service tenant onboarding.
+    /// </summary>
+    [MaxLength(200)]
+    public string? OrganizationName { get; set; }
+
+    /// <summary>
+    /// Alias for OrganizationName to align with frontend registration payload.
+    /// </summary>
+    [MaxLength(200)]
+    public string? Organization { get; set; }
+
+    /// <summary>
+    /// Optional role specification. Only non-admin roles (Student, Instructor) are permitted during registration.
+    /// </summary>
+    [MaxLength(50)]
+    public string? Role { get; set; }
 
     /// <summary>
     /// Optional phone number for the user.

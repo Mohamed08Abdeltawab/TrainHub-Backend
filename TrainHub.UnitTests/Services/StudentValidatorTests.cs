@@ -110,6 +110,38 @@ public class StudentValidatorTests : IDisposable
     }
 
     [Fact]
+    public async Task ValidateCreateAsync_WhenUserIsAlreadyInstructor_ThrowsConflictException()
+    {
+        // Arrange
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Existing",
+            LastName = "Instructor",
+            Email = "instructor@example.com"
+        };
+        await _dbContext.ApplicationUsers.AddAsync(user);
+
+        var existingInstructor = Instructor.Create(user.Id, _organizationId, "Web Development");
+        await _dbContext.Instructors.AddAsync(existingInstructor);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new CreateStudentDto
+        {
+            UserId = user.Id,
+            StudentCode = "STU-NEW"
+        };
+
+        // Act
+        var act = () => _validator.ValidateCreateAsync(dto, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*already registered as an instructor*");
+    }
+
+    [Fact]
     public async Task ValidateCreateAsync_WhenStudentCodeAlreadyExists_ThrowsConflictException()
     {
         // Arrange

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -41,90 +42,234 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Registration attempt for email '{Email}' in organization '{OrganizationId}'.",
-            request.Email, request.OrganizationId);
+        ArgumentNullException.ThrowIfNull(request);
 
-        // ── Validate Organization exists and is active ──────────────
-        await _organizationValidator.ValidateOrganizationActiveAsync(request.OrganizationId, cancellationToken);
+        _logger.LogInformation("Registration attempt for email '{Email}'.", request.Email);
 
-        // ── Check for duplicate email within the organization ───────
-        var normalizedEmail = _userManager.NormalizeEmail(request.Email);
-        var existingUser = await _dbContext.ApplicationUsers
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail && u.OrganizationId == request.OrganizationId, cancellationToken);
-
-        if (existingUser != null)
+        // ── 1. Guard against unauthorized administrative role escalation ──
+        if (!string.IsNullOrWhiteSpace(request.Role))
         {
-            _logger.LogWarning("Email '{Email}' is already registered in organization '{OrganizationId}'.",
-                request.Email, request.OrganizationId);
-            throw new ConflictException($"A user with email '{request.Email}' already exists in this organization.");
+            var requestedRole = request.Role.Trim();
+            if (requestedRole.Equals(AppRoles.SuperAdmin, StringComparison.OrdinalIgnoreCase) ||
+                requestedRole.Equals(AppRoles.OrgAdmin, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Attempted unauthorized role escalation to '{Role}' during registration.", requestedRole);
+                throw new BadRequestException("Administrative roles cannot be assigned via registration.");
+            }
+
+            if (!requestedRole.Equals(AppRoles.Student, StringComparison.OrdinalIgnoreCase) &&
+                !requestedRole.Equals(AppRoles.Instructor, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new BadRequestException($"Invalid registration role '{requestedRole}'.");
+            }
         }
 
-        // ── Create the ApplicationUser ──────────────────────────────
-        var user = new ApplicationUser
-        {
-            FirstName = request.FirstName.Trim(),
-            LastName = request.LastName.Trim(),
-            Email = request.Email.Trim(),
-            UserName = request.Email.Trim(),
-            OrganizationId = request.OrganizationId,
-            PhoneNumber = request.PhoneNumber?.Trim(),
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
+        var hasExplicitOrgId = request.OrganizationId.HasValue && request.OrganizationId.Value != Guid.Empty;
+        var orgNameInput = (request.OrganizationName ?? request.Organization)?.Trim();
 
-        var createResult = await _userManager.CreateAsync(user, request.Password);
-        if (!createResult.Succeeded)
+        if (!hasExplicitOrgId && string.IsNullOrWhiteSpace(orgNameInput))
         {
-            var errors = string.Join("; ", createResult.Errors.Select(e => e.Description));
-            _logger.LogError("Failed to create user '{Email}'. Errors: {Errors}", request.Email, errors);
-            throw new BadRequestException($"Registration failed: {errors}");
+            throw new BadRequestException("Either an existing Organization ID or a new Organization Name must be provided.");
         }
 
-        _logger.LogInformation("User '{UserId}' created successfully.", user.Id);
+        Guid targetOrgId;
+        string targetOrgName;
+        string assignedRole;
+        Organization? createdOrg = null;
+        ApplicationUser? createdUser = null;
+        Student? createdStudent = null;
 
-        // ── Assign default role ─────────────────────────────────────
-        var roleResult = await _userManager.AddToRoleAsync(user, AppRoles.Student);
-        if (!roleResult.Succeeded)
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
+        try
         {
-            var errors = string.Join("; ", roleResult.Errors.Select(e => e.Description));
-            _logger.LogError("Failed to assign default role to user '{UserId}'. Errors: {Errors}", user.Id, errors);
-            throw new BadRequestException($"Failed to assign default role: {errors}");
+            if (_dbContext.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) != true)
+            {
+                transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            }
+        }
+        catch
+        {
+            // Transactions not supported on current database provider (e.g. test provider)
         }
 
-        var roles = new List<string> { AppRoles.Student };
-
-        // ── Generate tokens ─────────────────────────────────────────
-        var accessToken = _jwtTokenGenerator.GenerateToken(user, roles);
-
-        var refreshToken = _jwtTokenGenerator.GenerateRefreshToken();
-        user.RefreshToken = refreshToken;
-        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpiryDays);
-
-        await _userManager.UpdateAsync(user);
-
-        _logger.LogInformation("Registration completed successfully for user '{UserId}'.", user.Id);
-
-        var org = await _dbContext.Organizations
-            .AsNoTracking()
-            .FirstOrDefaultAsync(o => o.Id == user.OrganizationId, cancellationToken);
-
-        return new AuthResponse
+        try
         {
-            UserId = user.Id,
-            OrganizationId = user.OrganizationId,
-            OrganizationName = org?.Name,
-            Email = user.Email!,
-            UserName = user.UserName!,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            AccessToken = accessToken,
-            RefreshToken = refreshToken,
-            AccessTokenExpiry = DateTime.UtcNow.AddMinutes(
-                _jwtSettings.ExpiryMinutes > 0 ? _jwtSettings.ExpiryMinutes : 60),
-            Roles = roles
-        };
+            if (!hasExplicitOrgId)
+            {
+                // ── Mode A: Self-service Training Center Onboarding ──
+                var baseSlug = Regex.Replace(orgNameInput!.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+                if (string.IsNullOrWhiteSpace(baseSlug)) baseSlug = "org";
+                var slug = baseSlug;
+                var suffix = 1;
+                while (await _dbContext.Organizations.IgnoreQueryFilters().AnyAsync(o => o.Slug == slug, cancellationToken))
+                {
+                    slug = $"{baseSlug}-{suffix++}";
+                }
+
+                createdOrg = new Organization
+                {
+                    Id = Guid.NewGuid(),
+                    Name = orgNameInput,
+                    Slug = slug,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                await _dbContext.Organizations.AddAsync(createdOrg, cancellationToken);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+
+                targetOrgId = createdOrg.Id;
+                targetOrgName = createdOrg.Name;
+                assignedRole = AppRoles.OrgAdmin;
+            }
+            else
+            {
+                // ── Mode B: Registering into an Existing Organization ──
+                targetOrgId = request.OrganizationId!.Value;
+                await _organizationValidator.ValidateOrganizationActiveAsync(targetOrgId, cancellationToken);
+
+                var org = await _dbContext.Organizations
+                    .IgnoreQueryFilters()
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(o => o.Id == targetOrgId, cancellationToken);
+
+                if (org != null)
+                {
+                    if (org.Slug.Equals("platform", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new BadRequestException("Registration into the platform organization is not allowed.");
+                    }
+                    targetOrgName = org.Name;
+                }
+                else
+                {
+                    targetOrgName = "Organization";
+                }
+                assignedRole = string.IsNullOrWhiteSpace(request.Role) ? AppRoles.Student : request.Role.Trim();
+            }
+
+            // ── Check for duplicate email within the organization ──
+            var normalizedEmail = _userManager.NormalizeEmail(request.Email);
+            var existingUser = await _dbContext.ApplicationUsers
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail && u.OrganizationId == targetOrgId, cancellationToken);
+
+            if (existingUser != null)
+            {
+                _logger.LogWarning("Email '{Email}' is already registered in organization '{OrganizationId}'.",
+                    request.Email, targetOrgId);
+                throw new ConflictException($"A user with email '{request.Email}' already exists in this organization.");
+            }
+
+            // ── Create ApplicationUser ──
+            var user = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                FirstName = request.FirstName.Trim(),
+                LastName = request.LastName.Trim(),
+                Email = request.Email.Trim(),
+                UserName = request.Email.Trim(),
+                OrganizationId = targetOrgId,
+                PhoneNumber = request.PhoneNumber?.Trim(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            var createResult = await _userManager.CreateAsync(user, request.Password);
+            if (!createResult.Succeeded)
+            {
+                var errors = string.Join("; ", createResult.Errors.Select(e => e.Description));
+                _logger.LogError("Failed to create user '{Email}'. Errors: {Errors}", request.Email, errors);
+                throw new BadRequestException($"Registration failed: {errors}");
+            }
+            createdUser = user;
+
+            // ── Assign Role ──
+            var roleResult = await _userManager.AddToRoleAsync(user, assignedRole);
+            if (!roleResult.Succeeded)
+            {
+                var errors = string.Join("; ", roleResult.Errors.Select(e => e.Description));
+                _logger.LogError("Failed to assign role '{Role}' to user '{UserId}'. Errors: {Errors}", assignedRole, user.Id, errors);
+                throw new BadRequestException($"Failed to assign role: {errors}");
+            }
+
+            // ── If Student, create Student domain entity to prevent orphan account (WRK-01) ──
+            if (assignedRole.Equals(AppRoles.Student, StringComparison.OrdinalIgnoreCase))
+            {
+                var studentCode = $"STU-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+                createdStudent = Student.Create(
+                    user.Id,
+                    targetOrgId,
+                    studentCode,
+                    guardianPhone: null,
+                    academicYear: null,
+                    dateOfBirth: null,
+                    notes: "Self-registered student");
+
+                await _dbContext.Students.AddAsync(createdStudent, cancellationToken);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            // ── Generate Tokens ──
+            var roles = new List<string> { assignedRole };
+            var accessToken = _jwtTokenGenerator.GenerateToken(user, roles);
+            var refreshToken = _jwtTokenGenerator.GenerateRefreshToken();
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpiryDays);
+
+            await _userManager.UpdateAsync(user);
+
+            if (transaction != null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            _logger.LogInformation("Registration completed successfully for user '{UserId}' in organization '{OrgId}'.", user.Id, targetOrgId);
+
+            return new AuthResponse
+            {
+                UserId = user.Id,
+                OrganizationId = targetOrgId,
+                OrganizationName = targetOrgName,
+                Email = user.Email!,
+                UserName = user.UserName!,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                AccessTokenExpiry = DateTime.UtcNow.AddMinutes(
+                    _jwtSettings.ExpiryMinutes > 0 ? _jwtSettings.ExpiryMinutes : 60),
+                Roles = roles
+            };
+        }
+        catch
+        {
+            if (transaction != null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+            else
+            {
+                // In-memory or non-relational compensating rollback
+                if (createdStudent != null)
+                {
+                    _dbContext.Students.Remove(createdStudent);
+                    await _dbContext.SaveChangesAsync(CancellationToken.None);
+                }
+                if (createdUser != null)
+                {
+                    await _userManager.DeleteAsync(createdUser);
+                }
+                if (createdOrg != null)
+                {
+                    _dbContext.Organizations.Remove(createdOrg);
+                    await _dbContext.SaveChangesAsync(CancellationToken.None);
+                }
+            }
+            throw;
+        }
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
