@@ -23,7 +23,14 @@ public class DatabaseHealthCheckTests : IDisposable
 
     public void Dispose()
     {
-        _dbContext.Database.EnsureDeleted();
+        try
+        {
+            _dbContext.Database.EnsureDeleted();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Ignore if context was disposed
+        }
         _dbContext.Dispose();
     }
 
@@ -39,5 +46,23 @@ public class DatabaseHealthCheckTests : IDisposable
         // Assert
         result.Status.Should().Be(HealthStatus.Healthy);
         result.Description.Should().Contain("Database connection is healthy");
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_WhenDatabaseThrowsException_ReturnsUnhealthy()
+    {
+        // Arrange
+        var failingContext = TestHelpers.CreateInMemoryDbContext();
+        failingContext.Dispose(); // Forces CanConnectAsync to throw ObjectDisposedException
+        var failingHealthCheck = new DatabaseHealthCheck(failingContext, _loggerMock.Object);
+        var context = new HealthCheckContext();
+
+        // Act
+        var result = await failingHealthCheck.CheckHealthAsync(context);
+
+        // Assert
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain("Database health check probe failed");
+        result.Exception.Should().NotBeNull();
     }
 }
