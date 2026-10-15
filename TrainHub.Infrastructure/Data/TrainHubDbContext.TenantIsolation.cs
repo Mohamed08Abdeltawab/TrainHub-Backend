@@ -16,6 +16,7 @@ public partial class TrainHubDbContext
         modelBuilder.Entity<Instructor>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
         modelBuilder.Entity<Session>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
         modelBuilder.Entity<Student>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
+        modelBuilder.Entity<Assignment>().HasQueryFilter(e => CurrentOrganizationId == null || e.OrganizationId == CurrentOrganizationId);
         modelBuilder.Entity<Organization>().HasQueryFilter(e => CurrentOrganizationId == null || e.Id == CurrentOrganizationId);
     }
 

@@ -42,6 +42,8 @@ public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, Iden
     public virtual DbSet<Session> Sessions { get; set; }
 
     public virtual DbSet<Student> Students { get; set; }
+ 
+    public virtual DbSet<Assignment> Assignments { get; set; }
 
     /// <summary>
     /// Acquires a transaction-scoped row lock on the specified CourseGroup using UPDLOCK and HOLDLOCK
@@ -302,6 +304,29 @@ public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, Iden
             entity.HasOne(d => d.User).WithOne(p => p.Student)
                 .HasForeignKey<Student>(d => d.UserId)
                 .HasConstraintName("FK_Students_ApplicationUsers");
+        });
+
+        modelBuilder.Entity<Assignment>(entity =>
+        {
+            entity.HasIndex(e => e.OrganizationId, "IX_Assignments_OrganizationId");
+            entity.HasIndex(e => e.CourseGroupId, "IX_Assignments_CourseGroupId");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.Title).HasMaxLength(200);
+            entity.Property(e => e.Description).HasMaxLength(1000);
+            entity.Property(e => e.MaxScore).HasDefaultValue(100, "DF_Assignments_MaxScore");
+            entity.Property(e => e.Status).HasDefaultValue((byte)1, "DF_Assignments_Status");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())", "DF_Assignments_CreatedAt");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())", "DF_Assignments_UpdatedAt");
+
+            entity.HasOne(d => d.CourseGroup).WithMany()
+                .HasForeignKey(d => d.CourseGroupId)
+                .HasConstraintName("FK_Assignments_CourseGroups");
+
+            entity.HasOne(d => d.Organization).WithMany()
+                .HasForeignKey(d => d.OrganizationId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_Assignments_Organizations");
         });
 
         OnModelCreatingPartial(modelBuilder);

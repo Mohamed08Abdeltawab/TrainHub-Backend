@@ -19,6 +19,7 @@ public interface ITrainHubDbContext
     DbSet<Organization> Organizations { get; }
     DbSet<Session> Sessions { get; }
     DbSet<Student> Students { get; }
+    DbSet<Assignment> Assignments { get; }
 
     DatabaseFacade Database { get; }
 

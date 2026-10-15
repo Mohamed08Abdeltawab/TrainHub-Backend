@@ -50,6 +50,10 @@ public static class DependencyInjection
         services.AddScoped<IAttendanceValidator, AttendanceValidator>();
         services.AddScoped<IAttendanceService, AttendanceService>();
 
+        // ── Assignment Services ───────────────────────────────────
+        services.AddScoped<IAssignmentValidator, AssignmentValidator>();
+        services.AddScoped<IAssignmentService, AssignmentService>();
+
         // ── Dashboard Services ──────────────────────────────────────
         services.AddScoped<IDashboardService, DashboardService>();
 

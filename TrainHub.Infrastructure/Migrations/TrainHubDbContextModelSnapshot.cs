@@ -265,6 +265,60 @@ namespace TrainHub.Infrastructure.Migrations
                     b.ToTable("ApplicationUsers", (string)null);
                 });
 
+            modelBuilder.Entity("TrainHub.Domain.Models.Assignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newsequentialid())");
+
+                    b.Property<Guid>("CourseGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("(sysutcdatetime())", "DF_Assignments_CreatedAt");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("MaxScore")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(100, "DF_Assignments_MaxScore");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint")
+                        .HasDefaultValue((byte)1, "DF_Assignments_Status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("(sysutcdatetime())", "DF_Assignments_UpdatedAt");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "CourseGroupId" }, "IX_Assignments_CourseGroupId");
+
+                    b.HasIndex(new[] { "OrganizationId" }, "IX_Assignments_OrganizationId");
+
+                    b.ToTable("Assignments");
+                });
+
             modelBuilder.Entity("TrainHub.Domain.Models.AttendanceRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -748,6 +802,26 @@ namespace TrainHub.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("FK_ApplicationUsers_Organizations");
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("TrainHub.Domain.Models.Assignment", b =>
+                {
+                    b.HasOne("TrainHub.Domain.Models.CourseGroup", "CourseGroup")
+                        .WithMany()
+                        .HasForeignKey("CourseGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_Assignments_CourseGroups");
+
+                    b.HasOne("TrainHub.Domain.Models.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .IsRequired()
+                        .HasConstraintName("FK_Assignments_Organizations");
+
+                    b.Navigation("CourseGroup");
 
                     b.Navigation("Organization");
                 });

@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -6,20 +8,35 @@ using TrainHub.Api.Controllers;
 using TrainHub.Application.Common.Models;
 using TrainHub.Application.Features.Enrollments.DTOs;
 using TrainHub.Application.Interfaces;
+using TrainHub.Domain.Constants;
 
 namespace TrainHub.UnitTests.Controllers;
 
 public class EnrollmentsControllerTests
 {
     private readonly Mock<IEnrollmentService> _enrollmentServiceMock;
+    private readonly Mock<ITrainHubDbContext> _dbContextMock;
     private readonly Mock<ILogger<EnrollmentsController>> _loggerMock;
     private readonly EnrollmentsController _controller;
+    private readonly Guid _userId = Guid.NewGuid();
 
     public EnrollmentsControllerTests()
     {
         _enrollmentServiceMock = new Mock<IEnrollmentService>();
+        _dbContextMock = new Mock<ITrainHubDbContext>();
         _loggerMock = new Mock<ILogger<EnrollmentsController>>();
-        _controller = new EnrollmentsController(_enrollmentServiceMock.Object, _loggerMock.Object);
+        _controller = new EnrollmentsController(_enrollmentServiceMock.Object, _dbContextMock.Object, _loggerMock.Object);
+
+        var user = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, _userId.ToString()),
+            new Claim(ClaimTypes.Role, AppRoles.SuperAdmin)
+        ], "TestAuth"));
+
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = user }
+        };
     }
 
     [Fact]
