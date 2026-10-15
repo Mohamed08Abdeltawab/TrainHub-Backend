@@ -135,6 +135,30 @@ public class AttendancesController : ControllerBase
     }
 
     /// <summary>
+    /// Saves attendance records for multiple students in a single session as an atomic batch.
+    /// Authorized for OrgStaff (SuperAdmin, OrgAdmin) and Instructors assigned to the session or course group.
+    /// </summary>
+    [HttpPost("/api/sessions/{sessionId:guid}/attendance/batch")]
+    [HttpPost("session/{sessionId:guid}/batch")]
+    [Authorize(Policy = AppPolicies.RequireCourseStaff)]
+    [ProducesResponseType(typeof(IReadOnlyList<AttendanceDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<IReadOnlyList<AttendanceDto>>> SaveBatch(
+        Guid sessionId,
+        [FromBody] BatchAttendanceRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("HTTP POST api/sessions/{SessionId}/attendance/batch received.", sessionId);
+        var userId = GetCurrentUserId();
+        var result = await _attendanceService.SaveBatchAsync(sessionId, dto, userId, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Updates details (status and notes) of an existing attendance record.
     /// Authorized for OrgStaff and assigned Instructors.
     /// </summary>

@@ -57,4 +57,9 @@ public interface IAttendanceValidator
     /// Validates parameters, entity existence, enrollment, and caller authorization for calculating attendance percentage.
     /// </summary>
     Task ValidateGetPercentageAsync(Guid studentId, Guid? courseGroupId, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates business invariants, student eligibility, duplicate prevention, and caller authorization for a batch attendance submission.
+    /// </summary>
+    Task ValidateBatchAsync(Guid sessionId, BatchAttendanceRequestDto dto, Guid organizationId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 }

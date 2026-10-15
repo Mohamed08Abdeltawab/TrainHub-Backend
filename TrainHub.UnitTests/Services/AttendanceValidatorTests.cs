@@ -952,4 +952,249 @@ public class AttendanceValidatorTests : IDisposable
     }
 
     #endregion
+
+    #region Batch Attendance Validation Tests (Phase 3.2)
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenRecordsEmpty_ThrowsValidationException()
+    {
+        // Arrange
+        var dto = new BatchAttendanceRequestDto { Records = [] };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        await act.Should().ThrowAsync<ValidationException>()
+            .Where(ex => ex.Errors.ContainsKey(nameof(dto.Records)));
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenDuplicateStudentsInBatch_ThrowsConflictException()
+    {
+        // Arrange
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present },
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Late }
+            ]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*duplicate attendance entries*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenInvalidStatus_ThrowsValidationException()
+    {
+        // Arrange
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = 99 }
+            ]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        await act.Should().ThrowAsync<ValidationException>()
+            .Where(ex => ex.Errors.ContainsKey("Status"));
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenSessionDoesNotExist_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }
+            ]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(Guid.NewGuid(), dto, _organizationId);
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Session*not found*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenCrossTenantSession_ThrowsNotFoundException()
+    {
+        // Arrange
+        var otherOrgId = Guid.NewGuid();
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }
+            ]
+        };
+
+        // Act & Assert: session belongs to _organizationId, but validated against otherOrgId
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, otherOrgId);
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Session*not found*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenSessionIsCancelled_ThrowsConflictException()
+    {
+        // Arrange
+        _session.Cancel();
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }
+            ]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*Cannot record attendance for a cancelled session*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenStudentDoesNotExist_ThrowsNotFoundException()
+    {
+        // Arrange
+        var missingStudentId = Guid.NewGuid();
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = missingStudentId, Status = AttendanceConstants.Statuses.Present }
+            ]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        await act.Should().ThrowAsync<NotFoundException>()
+            .WithMessage("*Student*not found*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenStudentNotEnrolledInGroup_ThrowsConflictException()
+    {
+        // Arrange: Create student not enrolled in _courseGroup
+        var user2 = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "not_enrolled@t.com",
+            FirstName = "Not",
+            LastName = "Enrolled",
+            IsActive = true
+        };
+        _dbContext.ApplicationUsers.Add(user2);
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-NOT-ENR");
+        _dbContext.Students.Add(student2);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = student2.Id, Status = AttendanceConstants.Statuses.Present }
+            ]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*Student is not enrolled in the course group for this session*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenStudentEnrollmentIsCancelled_ThrowsConflictException()
+    {
+        // Arrange: Student enrolled but cancelled
+        var user2 = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "cancelled_enr@t.com",
+            FirstName = "Cancelled",
+            LastName = "Enrollee",
+            IsActive = true
+        };
+        _dbContext.ApplicationUsers.Add(user2);
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-CANC-ENR");
+        _dbContext.Students.Add(student2);
+        var enr2 = Enrollment.Create(_organizationId, _courseGroup.Id, student2.Id, status: EnrollmentConstants.Statuses.Cancelled);
+        _dbContext.Enrollments.Add(enr2);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = student2.Id, Status = AttendanceConstants.Statuses.Present }
+            ]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId);
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*enrollment is cancelled*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenUnauthorizedCaller_ThrowsForbiddenAccessException()
+    {
+        // Arrange: Instructor who does NOT teach this session
+        var otherUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "unauth_inst@t.com",
+            FirstName = "Unauth",
+            LastName = "Inst"
+        };
+        _dbContext.ApplicationUsers.Add(otherUser);
+        var otherInst = Instructor.Create(otherUser.Id, _organizationId, "Other Specialization");
+        _dbContext.Instructors.Add(otherInst);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }
+            ]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, otherUser.Id);
+        await act.Should().ThrowAsync<ForbiddenAccessException>()
+            .WithMessage("*not authorized to manage attendance for this session*");
+    }
+
+    [Fact]
+    public async Task ValidateBatchAsync_WhenValidBatch_DoesNotThrow()
+    {
+        // Arrange
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present, Notes = "Valid entry" }
+            ]
+        };
+
+        // Act & Assert
+        var act = () => _validator.ValidateBatchAsync(_session.Id, dto, _organizationId, _instructorUser.Id);
+        await act.Should().NotThrowAsync();
+    }
+
+    #endregion
 }
+

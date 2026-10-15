@@ -567,6 +567,143 @@ public class AttendanceValidator : IAttendanceValidator
         }
     }
 
+    public async Task ValidateBatchAsync(
+        Guid sessionId,
+        BatchAttendanceRequestDto dto,
+        Guid organizationId,
+        Guid? currentUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        if (dto.Records == null || dto.Records.Count == 0)
+        {
+            _logger.LogWarning("Validation failed: Batch attendance request must contain at least one record.");
+            throw new ValidationException(nameof(dto.Records), "Batch must contain at least one attendance record.");
+        }
+
+        // 1. Check for duplicate students within the batch
+        var duplicateStudents = dto.Records
+            .GroupBy(r => r.StudentId)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+
+        if (duplicateStudents.Count > 0)
+        {
+            _logger.LogWarning("Validation failed: Batch contains duplicate student IDs ({Count} duplicates).", duplicateStudents.Count);
+            throw new ConflictException($"Batch contains duplicate attendance entries for student(s): {string.Join(", ", duplicateStudents)}.");
+        }
+
+        // 2. Validate individual item fields (status & notes)
+        foreach (var item in dto.Records)
+        {
+            if (!AttendanceConstants.IsValidStatus(item.Status))
+            {
+                _logger.LogWarning("Validation failed: Invalid attendance status '{Status}'.", item.Status);
+                throw new ValidationException(nameof(item.Status),
+                    $"Invalid status '{item.Status}'. Allowed values: {string.Join(", ", AttendanceConstants.Statuses.All)}.");
+            }
+
+            if (!AttendanceConstants.IsValidNotes(item.Notes))
+            {
+                _logger.LogWarning("Validation failed: Notes exceed max length.");
+                throw new ValidationException(nameof(item.Notes),
+                    $"Notes exceeds maximum length of {AttendanceConstants.NotesMaxLength} characters.");
+            }
+        }
+
+        // 3. Verify Session exists within the current organization
+        var session = await _dbContext.Sessions
+            .IgnoreQueryFilters()
+            .Include(s => s.CourseGroup)
+            .FirstOrDefaultAsync(s => s.Id == sessionId && s.OrganizationId == organizationId, cancellationToken);
+
+        if (session == null)
+        {
+            _logger.LogWarning("Validation failed: Session '{SessionId}' not found in organization '{OrganizationId}'.", sessionId, organizationId);
+            throw new NotFoundException("Session", sessionId);
+        }
+
+        // 4. Instructor authorization check
+        await ValidateInstructorAuthorizationForSessionAsync(session, currentUserId, organizationId, cancellationToken);
+
+        // 5. Prevent recording attendance for cancelled or draft sessions
+        if (session.Status == SessionConstants.Statuses.Cancelled)
+        {
+            _logger.LogWarning("Validation failed: Attempted to record attendance for cancelled session '{SessionId}'.", sessionId);
+            throw new ConflictException("Cannot record attendance for a cancelled session.");
+        }
+
+        if (session.Status == SessionConstants.Statuses.Draft)
+        {
+            _logger.LogWarning("Validation failed: Attempted to record attendance for draft session '{SessionId}'.", sessionId);
+            throw new ConflictException("Cannot record attendance for a draft session.");
+        }
+
+        // 6. Prevent recording attendance if the session's course group is cancelled
+        if (session.CourseGroup != null && session.CourseGroup.Status == CourseGroupConstants.Statuses.Cancelled)
+        {
+            _logger.LogWarning("Validation failed: Attempted to record attendance for session in cancelled course group '{CourseGroupId}'.", session.CourseGroupId);
+            throw new ConflictException("Cannot record attendance for a session in a cancelled course group.");
+        }
+
+        // 7. Verify all students exist in the organization and have active accounts
+        var studentIds = dto.Records.Select(r => r.StudentId).ToList();
+
+        var students = await _dbContext.Students
+            .IgnoreQueryFilters()
+            .Include(s => s.User)
+            .Where(s => studentIds.Contains(s.Id) && s.OrganizationId == organizationId)
+            .ToListAsync(cancellationToken);
+
+        var studentsMap = students.ToDictionary(s => s.Id);
+
+        foreach (var studentId in studentIds)
+        {
+            if (!studentsMap.TryGetValue(studentId, out var student))
+            {
+                _logger.LogWarning("Validation failed: Student '{StudentId}' not found in organization '{OrganizationId}'.", studentId, organizationId);
+                throw new NotFoundException("Student", studentId);
+            }
+
+            if (student.User != null && !student.User.IsActive)
+            {
+                _logger.LogWarning("Validation failed: Student '{StudentId}' has an inactive user account.", studentId);
+                throw new ConflictException("Cannot record attendance for a student whose user account is inactive.");
+            }
+        }
+
+        // 8. Verify all students are enrolled in the session's CourseGroup with valid status
+        var enrollments = await _dbContext.Enrollments
+            .IgnoreQueryFilters()
+            .Where(e => e.CourseGroupId == session.CourseGroupId && studentIds.Contains(e.StudentId) && e.OrganizationId == organizationId)
+            .ToListAsync(cancellationToken);
+
+        var enrollmentsMap = enrollments.ToDictionary(e => e.StudentId);
+
+        foreach (var studentId in studentIds)
+        {
+            if (!enrollmentsMap.TryGetValue(studentId, out var enrollment))
+            {
+                _logger.LogWarning("Validation failed: Student '{StudentId}' is not enrolled in CourseGroup '{CourseGroupId}'.", studentId, session.CourseGroupId);
+                throw new ConflictException("Student is not enrolled in the course group for this session.");
+            }
+
+            if (enrollment.Status == EnrollmentConstants.Statuses.Cancelled)
+            {
+                _logger.LogWarning("Validation failed: Student '{StudentId}' has cancelled enrollment in CourseGroup '{CourseGroupId}'.", studentId, session.CourseGroupId);
+                throw new ConflictException("Cannot record attendance for a student whose enrollment is cancelled.");
+            }
+
+            if (enrollment.Status == EnrollmentConstants.Statuses.Pending)
+            {
+                _logger.LogWarning("Validation failed: Student '{StudentId}' has pending enrollment in CourseGroup '{CourseGroupId}'.", studentId, session.CourseGroupId);
+                throw new ConflictException("Cannot record attendance for a student whose enrollment is pending.");
+            }
+        }
+    }
+
     #region Helper Methods
 
     private async Task ValidateInstructorAuthorizationForSessionAsync(

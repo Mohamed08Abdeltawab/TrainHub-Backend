@@ -62,4 +62,10 @@ public interface IAttendanceService
     /// Deletes an attendance record.
     /// </summary>
     Task DeleteAsync(Guid id, Guid? currentUserId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves attendance records for multiple students in a single session as an atomic batch.
+    /// Existing records for a student in this session are updated; new records are created.
+    /// </summary>
+    Task<IReadOnlyList<AttendanceDto>> SaveBatchAsync(Guid sessionId, BatchAttendanceRequestDto dto, Guid? currentUserId = null, CancellationToken cancellationToken = default);
 }

@@ -419,4 +419,182 @@ public class AttendanceServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Batch Attendance Service Tests (Phase 3.2)
+
+    [Fact]
+    public async Task SaveBatchAsync_SuccessfulCreation_PersistsAllRecordsAndReturnsDtos()
+    {
+        // Arrange: Create second student
+        var user2 = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "stu2_batch@t.com",
+            FirstName = "Student",
+            LastName = "Two"
+        };
+        _dbContext.ApplicationUsers.Add(user2);
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-002");
+        _dbContext.Students.Add(student2);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present, Notes = "Note 1" },
+                new BatchAttendanceItemDto { StudentId = student2.Id, Status = AttendanceConstants.Statuses.Late, Notes = "Note 2" }
+            ]
+        };
+
+        // Act
+        var result = await _service.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert
+        result.Should().HaveCount(2);
+        result.Should().ContainSingle(r => r.StudentId == _student.Id && r.Status == AttendanceConstants.Statuses.Present && r.Notes == "Note 1");
+        result.Should().ContainSingle(r => r.StudentId == student2.Id && r.Status == AttendanceConstants.Statuses.Late && r.Notes == "Note 2");
+
+        var dbRecords = _dbContext.AttendanceRecords.Where(a => a.SessionId == _session.Id).ToList();
+        dbRecords.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task SaveBatchAsync_UpdatingExistingRecords_UpdatesWithoutCreatingDuplicates()
+    {
+        // Arrange: Pre-seed existing attendance record
+        var existing = AttendanceRecord.Create(_organizationId, _session.Id, _student.Id, AttendanceConstants.Statuses.Absent, notes: "Initial Absent");
+        _dbContext.AttendanceRecords.Add(existing);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present, Notes = "Updated Present" }
+            ]
+        };
+
+        // Act
+        var result = await _service.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert: updated in-place without duplicate
+        result.Should().HaveCount(1);
+        result[0].Id.Should().Be(existing.Id);
+        result[0].Status.Should().Be(AttendanceConstants.Statuses.Present);
+        result[0].Notes.Should().Be("Updated Present");
+
+        var dbCount = _dbContext.AttendanceRecords.Count(a => a.SessionId == _session.Id && a.StudentId == _student.Id);
+        dbCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SaveBatchAsync_MixedCreateAndUpdate_HandlesBothCorrectly()
+    {
+        // Arrange: 1 existing, 1 new
+        var existing = AttendanceRecord.Create(_organizationId, _session.Id, _student.Id, AttendanceConstants.Statuses.Absent);
+        _dbContext.AttendanceRecords.Add(existing);
+
+        var user2 = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            UserName = "stu_mixed@t.com",
+            FirstName = "Mixed",
+            LastName = "Student"
+        };
+        _dbContext.ApplicationUsers.Add(user2);
+        var student2 = Student.Create(user2.Id, _organizationId, "STU-MIXED");
+        _dbContext.Students.Add(student2);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present, Notes = "Now Present" },
+                new BatchAttendanceItemDto { StudentId = student2.Id, Status = AttendanceConstants.Statuses.Excused, Notes = "Doctor note" }
+            ]
+        };
+
+        // Act
+        var result = await _service.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert
+        result.Should().HaveCount(2);
+        result.Should().ContainSingle(r => r.StudentId == _student.Id && r.Status == AttendanceConstants.Statuses.Present);
+        result.Should().ContainSingle(r => r.StudentId == student2.Id && r.Status == AttendanceConstants.Statuses.Excused);
+
+        var allRecords = _dbContext.AttendanceRecords.Where(a => a.SessionId == _session.Id).ToList();
+        allRecords.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task SaveBatchAsync_WhenNoOrganizationContext_ThrowsBadRequestException()
+    {
+        // Arrange
+        _currentOrgServiceMock.Setup(s => s.OrganizationId).Returns((Guid?)null);
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        // Act
+        var act = () => _service.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*Organization context is required*");
+    }
+
+    [Fact]
+    public async Task SaveBatchAsync_WhenValidationFails_ThrowsAndLeavesNoPartialWrites()
+    {
+        // Arrange
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present }]
+        };
+
+        _validatorMock.Setup(v => v.ValidateBatchAsync(_session.Id, dto, _organizationId, _studentUser.Id, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ConflictException("Validation failed"));
+
+        // Act
+        var act = () => _service.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>();
+
+        var count = _dbContext.AttendanceRecords.Count(a => a.SessionId == _session.Id);
+        count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SaveBatchAsync_RepeatedRequests_IsIdempotentAndUpdatesCleanly()
+    {
+        // Arrange
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records = [new BatchAttendanceItemDto { StudentId = _student.Id, Status = AttendanceConstants.Statuses.Present, Notes = "First save" }]
+        };
+
+        // Act: Save once
+        var firstResult = await _service.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Update note and save again
+        dto.Records[0].Notes = "Second save";
+        var secondResult = await _service.SaveBatchAsync(_session.Id, dto, _studentUser.Id);
+
+        // Assert: Exactly 1 record remains in DB, updated with latest notes
+        secondResult.Should().HaveCount(1);
+        secondResult[0].Id.Should().Be(firstResult[0].Id);
+        secondResult[0].Notes.Should().Be("Second save");
+
+        var dbCount = _dbContext.AttendanceRecords.Count(a => a.SessionId == _session.Id && a.StudentId == _student.Id);
+        dbCount.Should().Be(1);
+    }
+
+    #endregion
 }
+

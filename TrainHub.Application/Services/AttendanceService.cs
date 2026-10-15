@@ -444,6 +444,109 @@ public class AttendanceService : IAttendanceService
         _logger.LogInformation("Attendance record '{Id}' deleted successfully.", id);
     }
 
+    public async Task<IReadOnlyList<AttendanceDto>> SaveBatchAsync(
+        Guid sessionId,
+        BatchAttendanceRequestDto dto,
+        Guid? currentUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        var organizationId = _currentOrganizationService.OrganizationId;
+        if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
+        {
+            _logger.LogWarning("Cannot save batch attendance: Organization ID could not be determined from current context.");
+            throw new BadRequestException("Organization context is required.");
+        }
+
+        _logger.LogInformation("Saving batch attendance for session '{SessionId}' ({Count} records) in org '{OrganizationId}'.",
+            sessionId, dto.Records?.Count ?? 0, organizationId.Value);
+
+        await _attendanceValidator.ValidateBatchAsync(sessionId, dto, organizationId.Value, currentUserId, cancellationToken);
+
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
+        if (_dbContext.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) != true)
+        {
+            try
+            {
+                transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            }
+            catch
+            {
+                // Transactions may not be supported by current provider
+            }
+        }
+
+        if (dto.Records == null || dto.Records.Count == 0)
+        {
+            throw new ValidationException(nameof(dto.Records), "Batch must contain at least one attendance record.");
+        }
+
+        try
+        {
+            var studentIds = dto.Records.Select(r => r.StudentId).ToList();
+
+            var existingRecords = await _dbContext.AttendanceRecords
+                .Where(a => a.SessionId == sessionId && a.OrganizationId == organizationId.Value && studentIds.Contains(a.StudentId))
+                .ToListAsync(cancellationToken);
+
+            var existingMap = existingRecords.ToDictionary(a => a.StudentId);
+
+            foreach (var item in dto.Records)
+            {
+                if (existingMap.TryGetValue(item.StudentId, out var existing))
+                {
+                    existing.UpdateDetails(item.Status, item.Notes, currentUserId);
+                    _dbContext.AttendanceRecords.Update(existing);
+                }
+                else
+                {
+                    var newRecord = AttendanceRecord.Create(
+                        organizationId.Value,
+                        sessionId,
+                        item.StudentId,
+                        item.Status,
+                        currentUserId,
+                        item.Notes);
+
+                    _dbContext.AttendanceRecords.Add(newRecord);
+                }
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            if (transaction != null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            _logger.LogInformation("Successfully persisted batch attendance for session '{SessionId}' ({Count} records).",
+                sessionId, dto.Records.Count);
+
+            var savedRecords = await _dbContext.AttendanceRecords
+                .AsNoTracking()
+                .Where(a => a.SessionId == sessionId && a.OrganizationId == organizationId.Value && studentIds.Contains(a.StudentId))
+                .Include(a => a.Student)
+                    .ThenInclude(s => s.User)
+                .Include(a => a.MarkedByUser)
+                .Include(a => a.Session)
+                    .ThenInclude(s => s.CourseGroup)
+                .OrderBy(a => a.Student.User.LastName)
+                .ThenBy(a => a.Student.User.FirstName)
+                .ToListAsync(cancellationToken);
+
+            return savedRecords.Select(MapToDto).ToList();
+        }
+        catch
+        {
+            if (transaction != null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+            throw;
+        }
+    }
+
     private static AttendanceDto MapToDto(AttendanceRecord record)
     {
         var student = record.Student;

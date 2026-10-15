@@ -233,4 +233,36 @@ public class AttendancesControllerTests
         noContentResult.Should().NotBeNull();
         noContentResult!.StatusCode.Should().Be(204);
     }
+
+    [Fact]
+    public async Task SaveBatch_ReturnsOkResultWithSavedAttendanceDtos()
+    {
+        // Arrange
+        var sessionId = Guid.NewGuid();
+        var dto = new BatchAttendanceRequestDto
+        {
+            Records =
+            [
+                new BatchAttendanceItemDto { StudentId = Guid.NewGuid(), Status = 1 }
+            ]
+        };
+
+        var savedList = new List<AttendanceDto>
+        {
+            new AttendanceDto { Id = Guid.NewGuid(), SessionId = sessionId, StudentId = dto.Records[0].StudentId, Status = 1 }
+        };
+
+        _attendanceServiceMock.Setup(s => s.SaveBatchAsync(sessionId, dto, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(savedList);
+
+        // Act
+        var result = await _controller.SaveBatch(sessionId, dto, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+        okResult.Value.Should().BeEquivalentTo(savedList);
+    }
 }
+
