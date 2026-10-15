@@ -33,7 +33,7 @@ public class DemoDataSeeder : IDemoDataSeeder
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        var isEnabled = _configuration.GetValue("DemoData:Enabled", true);
+        var isEnabled = _configuration.GetValue("DemoData:Enabled", false);
         if (!isEnabled)
         {
             _logger.LogInformation("Demo data seeding is disabled via configuration.");
