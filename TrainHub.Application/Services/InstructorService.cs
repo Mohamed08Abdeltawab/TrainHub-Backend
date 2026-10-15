@@ -241,10 +241,19 @@ public class InstructorService : IInstructorService
 
         // Assign Instructor role if not already assigned
         var identityUser = await _userManager.FindByIdAsync(dto.UserId.ToString());
-        if (identityUser != null && !await _userManager.IsInRoleAsync(identityUser, AppRoles.Instructor))
+        if (identityUser != null)
         {
-            await _userManager.AddToRoleAsync(identityUser, AppRoles.Instructor);
-            _logger.LogInformation("Assigned Instructor role to user '{UserId}'.", dto.UserId);
+            if (await _userManager.IsInRoleAsync(identityUser, AppRoles.Student))
+            {
+                _logger.LogWarning("Cannot assign Instructor role to user '{UserId}' because they hold the Student role.", dto.UserId);
+                throw new ConflictException("A user holding the Student role cannot be registered as an instructor.");
+            }
+
+            if (!await _userManager.IsInRoleAsync(identityUser, AppRoles.Instructor))
+            {
+                await _userManager.AddToRoleAsync(identityUser, AppRoles.Instructor);
+                _logger.LogInformation("Assigned Instructor role to user '{UserId}'.", dto.UserId);
+            }
         }
 
         var user = await _dbContext.ApplicationUsers
@@ -318,6 +327,13 @@ public class InstructorService : IInstructorService
         // Validate linking rules
         await _instructorValidator.ValidateLinkUserAsync(id, userId, instructor.OrganizationId, cancellationToken);
 
+        var newUser = await _userManager.FindByIdAsync(userId.ToString());
+        if (newUser != null && await _userManager.IsInRoleAsync(newUser, AppRoles.Student))
+        {
+            _logger.LogWarning("Cannot link instructor '{InstructorId}' to user '{UserId}' because they hold the Student role.", id, userId);
+            throw new ConflictException("A user holding the Student role cannot be linked to an instructor profile.");
+        }
+
         var oldUserId = instructor.UserId;
 
         instructor.LinkUser(userId);
@@ -343,7 +359,6 @@ public class InstructorService : IInstructorService
             }
         }
 
-        var newUser = await _userManager.FindByIdAsync(userId.ToString());
         if (newUser != null && !await _userManager.IsInRoleAsync(newUser, AppRoles.Instructor))
         {
             await _userManager.AddToRoleAsync(newUser, AppRoles.Instructor);

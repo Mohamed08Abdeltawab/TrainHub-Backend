@@ -339,6 +339,185 @@ public class AuthServiceTests
     }
 
     [Fact]
+    public async Task RegisterAsync_WhenAnonymousUserAttemptsInstructorRole_ThrowsBadRequestException()
+    {
+        // Arrange
+        var org = new Organization
+        {
+            Id = Guid.NewGuid(),
+            Name = "Target Center",
+            Slug = "target-center",
+            IsActive = true
+        };
+        _dbContext.Organizations.Add(org);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new RegisterRequest
+        {
+            FirstName = "Infiltrator",
+            LastName = "Instructor",
+            Email = "infiltrator@target.com",
+            Password = "StrongPassword123!",
+            ConfirmPassword = "StrongPassword123!",
+            OrganizationId = org.Id,
+            Role = AppRoles.Instructor
+        };
+
+        // CreateService with null HttpContext (anonymous caller)
+        var service = CreateService();
+
+        // Act
+        var act = () => service.RegisterAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<BadRequestException>()
+            .WithMessage("*Instructor accounts can only be provisioned by authorized organization administrators*");
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WhenAuthenticatedOrgAdminProvisionsInstructor_SucceedsWithoutCreatingStudentEntity()
+    {
+        // Arrange
+        var org = new Organization
+        {
+            Id = Guid.NewGuid(),
+            Name = "Target Center",
+            Slug = "target-center",
+            IsActive = true
+        };
+        _dbContext.Organizations.Add(org);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new RegisterRequest
+        {
+            FirstName = "Approved",
+            LastName = "Instructor",
+            Email = "instructor@target.com",
+            Password = "StrongPassword123!",
+            ConfirmPassword = "StrongPassword123!",
+            OrganizationId = org.Id,
+            Role = AppRoles.Instructor
+        };
+
+        _userManagerMock.Setup(m => m.FindByEmailAsync(request.Email))
+            .ReturnsAsync((ApplicationUser?)null);
+
+        _userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), request.Password))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), AppRoles.Instructor))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _jwtTokenGeneratorMock.Setup(g => g.GenerateToken(It.IsAny<ApplicationUser>(), It.IsAny<IEnumerable<string>>(), null))
+            .Returns("fake-jwt-token");
+
+        _jwtTokenGeneratorMock.Setup(g => g.GenerateRefreshToken())
+            .Returns("fake-refresh-token");
+
+        _userManagerMock.Setup(m => m.UpdateAsync(It.IsAny<ApplicationUser>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        // Mock HttpContext with OrgAdmin claims
+        var claims = new[]
+        {
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, AppRoles.OrgAdmin),
+            new System.Security.Claims.Claim("organizationId", org.Id.ToString())
+        };
+        var identity = new System.Security.Claims.ClaimsIdentity(claims, "TestAuth");
+        var principal = new System.Security.Claims.ClaimsPrincipal(identity);
+
+        var httpContextMock = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
+        httpContextMock.Setup(c => c.User).Returns(principal);
+        var httpContextAccessorMock = new Mock<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+        httpContextAccessorMock.Setup(a => a.HttpContext).Returns(httpContextMock.Object);
+
+        var service = new AuthService(
+            _userManagerMock.Object,
+            _jwtTokenGeneratorMock.Object,
+            _dbContext,
+            _jwtOptions,
+            _organizationValidatorMock.Object,
+            _loggerMock.Object,
+            httpContextAccessorMock.Object);
+
+        // Act
+        var result = await service.RegisterAsync(request);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Roles.Should().Contain(AppRoles.Instructor);
+        result.StudentId.Should().BeNull();
+
+        // Verify NO student entity was created for instructor
+        var studentCount = await _dbContext.Students.CountAsync(s => s.UserId == result.UserId);
+        studentCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WithStudentCustomFields_SavesGuardianPhoneAcademicYearAndReturnsStudentInfo()
+    {
+        // Arrange
+        var org = new Organization
+        {
+            Id = Guid.NewGuid(),
+            Name = "Existing Center",
+            Slug = "existing-center",
+            IsActive = true
+        };
+        _dbContext.Organizations.Add(org);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new RegisterRequest
+        {
+            FirstName = "Student",
+            LastName = "Custom",
+            Email = "custom.student@existing.com",
+            Password = "StrongPassword123!",
+            ConfirmPassword = "StrongPassword123!",
+            OrganizationId = org.Id,
+            PhoneNumber = "+1 555 111 2222",
+            GuardianPhone = "+1 555 333 4444",
+            AcademicYear = "Grade 12",
+            StudentCode = "STU-CUSTOM-99"
+        };
+
+        _userManagerMock.Setup(m => m.FindByEmailAsync(request.Email))
+            .ReturnsAsync((ApplicationUser?)null);
+
+        _userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), request.Password))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), AppRoles.Student))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _jwtTokenGeneratorMock.Setup(g => g.GenerateToken(It.IsAny<ApplicationUser>(), It.IsAny<IEnumerable<string>>(), null))
+            .Returns("fake-jwt-token");
+
+        _jwtTokenGeneratorMock.Setup(g => g.GenerateRefreshToken())
+            .Returns("fake-refresh-token");
+
+        _userManagerMock.Setup(m => m.UpdateAsync(It.IsAny<ApplicationUser>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        var service = CreateService();
+
+        // Act
+        var result = await service.RegisterAsync(request);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.StudentId.Should().NotBeNull();
+        result.StudentCode.Should().Be("STU-CUSTOM-99");
+
+        var studentEntity = await _dbContext.Students.FindAsync(result.StudentId);
+        studentEntity.Should().NotBeNull();
+        studentEntity!.GuardianPhone.Should().Be("+1 555 333 4444");
+        studentEntity.AcademicYear.Should().Be("Grade 12");
+        studentEntity.StudentCode.Should().Be("STU-CUSTOM-99");
+    }
+
+    [Fact]
     public async Task RegisterAsync_WhenAttemptingPlatformOrganizationRegistration_ThrowsBadRequestException()
     {
         // Arrange

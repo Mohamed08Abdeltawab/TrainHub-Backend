@@ -621,4 +621,74 @@ public class InstructorServiceTests : IDisposable
         await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*Instructor*");
     }
+
+    [Fact]
+    public async Task LinkUserAsync_WhenTargetUserHasStudentRole_ThrowsConflictExceptionAndDoesNotModifyEntity()
+    {
+        // Arrange
+        var oldUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Old",
+            LastName = "Instructor"
+        };
+        var targetStudentUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Student",
+            LastName = "User"
+        };
+        _dbContext.ApplicationUsers.AddRange(oldUser, targetStudentUser);
+
+        var instructor = Instructor.Create(oldUser.Id, _organizationId, "Physics");
+        _dbContext.Instructors.Add(instructor);
+        await _dbContext.SaveChangesAsync();
+
+        _userManagerMock.Setup(m => m.IsInRoleAsync(It.Is<ApplicationUser>(u => u.Id == targetStudentUser.Id), AppRoles.Student))
+            .ReturnsAsync(true);
+
+        // Act
+        var act = () => _service.LinkUserAsync(instructor.Id, targetStudentUser.Id, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*holding the Student role cannot be linked*");
+
+        // Verify entity was NOT modified
+        var reloaded = await _dbContext.Instructors.FindAsync(instructor.Id);
+        reloaded!.UserId.Should().Be(oldUser.Id);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenTargetUserHasStudentRole_ThrowsConflictException()
+    {
+        // Arrange
+        var studentUser = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Student",
+            LastName = "User"
+        };
+        _dbContext.ApplicationUsers.Add(studentUser);
+        await _dbContext.SaveChangesAsync();
+
+        var dto = new CreateInstructorDto
+        {
+            UserId = studentUser.Id,
+            Specialization = "AI"
+        };
+
+        _userManagerMock.Setup(m => m.IsInRoleAsync(It.Is<ApplicationUser>(u => u.Id == studentUser.Id), AppRoles.Student))
+            .ReturnsAsync(true);
+
+        // Act
+        var act = () => _service.CreateAsync(dto, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*holding the Student role cannot be registered as an instructor*");
+    }
 }

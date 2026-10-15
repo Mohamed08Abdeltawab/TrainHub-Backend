@@ -6,6 +6,10 @@ namespace TrainHub.Application.Features.Auth.DTOs;
 public class AuthResponse
 {
     public Guid UserId { get; set; }
+ 
+    public Guid? StudentId { get; set; }
+
+    public string? StudentCode { get; set; }
 
     public Guid OrganizationId { get; set; }
 

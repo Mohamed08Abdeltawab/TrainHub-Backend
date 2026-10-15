@@ -512,4 +512,34 @@ public class InstructorValidatorTests : IDisposable
         // Assert
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public async Task ValidateLinkUserAsync_WhenUserIsRegisteredAsStudent_ThrowsConflictException()
+    {
+        // Arrange
+        var instructor = Instructor.Create(Guid.NewGuid(), _organizationId, "Web Development");
+        _dbContext.Instructors.Add(instructor);
+
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = _organizationId,
+            FirstName = "Student",
+            LastName = "User",
+            Email = "student@example.com",
+            IsActive = true
+        };
+        _dbContext.ApplicationUsers.Add(user);
+
+        var student = Student.Create(user.Id, _organizationId, "STU-999");
+        _dbContext.Students.Add(student);
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var act = () => _validator.ValidateLinkUserAsync(instructor.Id, user.Id, _organizationId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*registered as a student*cannot be both an instructor and a student*");
+    }
 }

@@ -221,5 +221,16 @@ public class InstructorValidator : IInstructorValidator
             _logger.LogWarning("Validation failed: User '{UserId}' is already linked to another instructor.", newUserId);
             throw new ConflictException($"User with ID '{newUserId}' is already registered as an instructor.");
         }
+
+        // 6. Verify User is not registered as a student (mutual exclusivity)
+        var studentExistsForUser = await _dbContext.Students
+            .IgnoreQueryFilters()
+            .AnyAsync(s => s.UserId == newUserId, cancellationToken);
+
+        if (studentExistsForUser)
+        {
+            _logger.LogWarning("Validation failed: User '{UserId}' is registered as a student and cannot be linked to an instructor.", newUserId);
+            throw new ConflictException($"User with ID '{newUserId}' is already registered as a student. A user cannot be both an instructor and a student.");
+        }
     }
 }

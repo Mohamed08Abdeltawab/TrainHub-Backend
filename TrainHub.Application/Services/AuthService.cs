@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -23,6 +25,7 @@ public class AuthService : IAuthService
     private readonly JwtSettings _jwtSettings;
     private readonly IOrganizationValidator _organizationValidator;
     private readonly ILogger<AuthService> _logger;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     public AuthService(
         UserManager<ApplicationUser> userManager,
@@ -30,7 +33,8 @@ public class AuthService : IAuthService
         ITrainHubDbContext dbContext,
         IOptions<JwtSettings> jwtOptions,
         IOrganizationValidator organizationValidator,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _userManager = userManager;
         _jwtTokenGenerator = jwtTokenGenerator;
@@ -38,6 +42,7 @@ public class AuthService : IAuthService
         _jwtSettings = jwtOptions.Value;
         _organizationValidator = organizationValidator;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
@@ -46,7 +51,7 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("Registration attempt for email '{Email}'.", request.Email);
 
-        // ── 1. Guard against unauthorized administrative role escalation ──
+        // ── 1. Guard against unauthorized administrative role escalation & unauthenticated instructor provisioning ──
         if (!string.IsNullOrWhiteSpace(request.Role))
         {
             var requestedRole = request.Role.Trim();
@@ -57,8 +62,22 @@ public class AuthService : IAuthService
                 throw new BadRequestException("Administrative roles cannot be assigned via registration.");
             }
 
-            if (!requestedRole.Equals(AppRoles.Student, StringComparison.OrdinalIgnoreCase) &&
-                !requestedRole.Equals(AppRoles.Instructor, StringComparison.OrdinalIgnoreCase))
+            if (requestedRole.Equals(AppRoles.Instructor, StringComparison.OrdinalIgnoreCase))
+            {
+                var caller = _httpContextAccessor?.HttpContext?.User;
+                var isStaffAdmin = caller?.Identity?.IsAuthenticated == true &&
+                    (caller.IsInRole(AppRoles.SuperAdmin) ||
+                     caller.IsInRole(AppRoles.OrgAdmin) ||
+                     caller.HasClaim(c => (c.Type == ClaimTypes.Role || c.Type == "role") &&
+                                          (c.Value == AppRoles.SuperAdmin || c.Value == AppRoles.OrgAdmin)));
+
+                if (!isStaffAdmin)
+                {
+                    _logger.LogWarning("Anonymous or unauthorized attempt to self-register as '{Role}'.", requestedRole);
+                    throw new BadRequestException("Instructor accounts can only be provisioned by authorized organization administrators.");
+                }
+            }
+            else if (!requestedRole.Equals(AppRoles.Student, StringComparison.OrdinalIgnoreCase))
             {
                 throw new BadRequestException($"Invalid registration role '{requestedRole}'.");
             }
@@ -198,15 +217,18 @@ public class AuthService : IAuthService
             // ── If Student, create Student domain entity to prevent orphan account (WRK-01) ──
             if (assignedRole.Equals(AppRoles.Student, StringComparison.OrdinalIgnoreCase))
             {
-                var studentCode = $"STU-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+                var studentCode = !string.IsNullOrWhiteSpace(request.StudentCode)
+                    ? request.StudentCode.Trim()
+                    : $"STU-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+
                 createdStudent = Student.Create(
                     user.Id,
                     targetOrgId,
                     studentCode,
-                    guardianPhone: null,
-                    academicYear: null,
+                    guardianPhone: request.GuardianPhone?.Trim() ?? request.PhoneNumber?.Trim(),
+                    academicYear: request.AcademicYear?.Trim(),
                     dateOfBirth: null,
-                    notes: "Self-registered student");
+                    notes: "Registered student");
 
                 await _dbContext.Students.AddAsync(createdStudent, cancellationToken);
                 await _dbContext.SaveChangesAsync(cancellationToken);
@@ -231,6 +253,8 @@ public class AuthService : IAuthService
             return new AuthResponse
             {
                 UserId = user.Id,
+                StudentId = createdStudent?.Id,
+                StudentCode = createdStudent?.StudentCode,
                 OrganizationId = targetOrgId,
                 OrganizationName = targetOrgName,
                 Email = user.Email!,

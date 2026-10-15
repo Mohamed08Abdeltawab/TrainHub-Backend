@@ -58,4 +58,23 @@ public class RegisterRequest
     [Phone]
     [MaxLength(50)]
     public string? PhoneNumber { get; set; }
+
+    /// <summary>
+    /// Optional guardian phone number for student registrations.
+    /// </summary>
+    [Phone]
+    [MaxLength(50)]
+    public string? GuardianPhone { get; set; }
+
+    /// <summary>
+    /// Optional academic year / curriculum for student registrations.
+    /// </summary>
+    [MaxLength(100)]
+    public string? AcademicYear { get; set; }
+
+    /// <summary>
+    /// Optional custom student code. If omitted, a code will be generated automatically.
+    /// </summary>
+    [MaxLength(50)]
+    public string? StudentCode { get; set; }
 }
