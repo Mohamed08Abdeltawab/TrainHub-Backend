@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TrainHub.Application.Common.Exceptions;
 using TrainHub.Application.Features.Enrollments.DTOs;
 using TrainHub.Application.Interfaces;
+using TrainHub.Application.Services;
 using TrainHub.Domain.Constants;
 using TrainHub.Domain.Models;
 using TrainHub.IntegrationTests.Infrastructure;
@@ -159,6 +160,145 @@ public class SqlServerCapacityConcurrencyTests : IClassFixture<SqlServerTestFixt
 
             activeCountInDb.Should().Be(capacity);
             activeCountInDb.Should().BeLessThanOrEqualTo(capacity);
+        }
+    }
+
+    [Fact]
+    public async Task ConcurrentEnrollments_WithInProcessLockDisabled_DatabaseRowLockStrictlyEnforcesCapacity()
+    {
+        // ── Explicitly disable process-local SemaphoreSlim to isolate and prove SQL Server's UPDLOCK, HOLDLOCK ──
+        // This validates that independent backend instances (without shared memory) are protected solely by database row locks.
+        EnrollmentService.EnableInProcessLock = false;
+        try
+        {
+            var orgId = Guid.NewGuid();
+            var orgSlug = $"pure-db-lock-{Guid.NewGuid():N}";
+            const int capacity = 3;
+            const int totalContenders = 10;
+
+            using (var setupContext = _fixture.CreateNewDbContext(orgId))
+            {
+                var org = new Organization
+                {
+                    Id = orgId,
+                    Name = $"DB Lock Org {orgSlug}",
+                    Slug = orgSlug,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                setupContext.Organizations.Add(org);
+
+                var course = Course.Create(orgId, "Pure DB Lock Course");
+                setupContext.Courses.Add(course);
+
+                var courseGroup = CourseGroup.Create(
+                    orgId,
+                    course.Id,
+                    "Cohort Pure DB Lock",
+                    DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)),
+                    DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+                    capacity: capacity);
+                setupContext.CourseGroups.Add(courseGroup);
+
+                for (var i = 1; i <= totalContenders; i++)
+                {
+                    var user = new ApplicationUser
+                    {
+                        Id = Guid.NewGuid(),
+                        OrganizationId = orgId,
+                        FirstName = "DBLockContender",
+                        LastName = $"Student{i}",
+                        Email = $"dblock_{i}_{orgSlug}@test.com",
+                        UserName = $"dblock_{i}_{orgSlug}@test.com",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    setupContext.ApplicationUsers.Add(user);
+
+                    var student = Student.Create(
+                        user.Id,
+                        orgId,
+                        $"STU-{Guid.NewGuid():N}"[..10].ToUpperInvariant(),
+                        guardianPhone: "1234567890",
+                        academicYear: "2026",
+                        dateOfBirth: null,
+                        notes: "Pure DB lock contender");
+                    setupContext.Students.Add(student);
+                }
+
+                await setupContext.SaveChangesAsync();
+            }
+
+            List<Guid> studentIds;
+            Guid groupId;
+            using (var queryContext = _fixture.CreateNewDbContext(orgId))
+            {
+                var group = await queryContext.CourseGroups.FirstAsync(cg => cg.OrganizationId == orgId);
+                groupId = group.Id;
+                studentIds = await queryContext.Students
+                    .Where(s => s.OrganizationId == orgId)
+                    .Select(s => s.Id)
+                    .ToListAsync();
+            }
+
+            var barrier = new Barrier(totalContenders);
+            var successList = new ConcurrentBag<EnrollmentDto>();
+            var conflictList = new ConcurrentBag<ConflictException>();
+            var otherErrors = new ConcurrentBag<Exception>();
+
+            var tasks = studentIds.Select(async studentId =>
+            {
+                using var scope = _fixture.CreateScope(orgId);
+                var enrollmentService = scope.ServiceProvider.GetRequiredService<IEnrollmentService>();
+
+                var dto = new CreateEnrollmentDto
+                {
+                    CourseGroupId = groupId,
+                    StudentId = studentId,
+                    PaidAmount = 100m,
+                    Status = EnrollmentConstants.Statuses.Active,
+                    EnrollmentDate = DateTime.UtcNow
+                };
+
+                await Task.Yield();
+                barrier.SignalAndWait();
+
+                try
+                {
+                    var result = await enrollmentService.CreateAsync(dto);
+                    successList.Add(result);
+                }
+                catch (ConflictException cex)
+                {
+                    conflictList.Add(cex);
+                }
+                catch (Exception ex)
+                {
+                    otherErrors.Add(ex);
+                }
+            });
+
+            await Task.WhenAll(tasks);
+
+            otherErrors.Should().BeEmpty("Zero unexpected errors should occur under database-level row lock coordination.");
+            successList.Count.Should().Be(capacity, $"Exactly {capacity} enrollments should succeed on SQL Server row locks alone.");
+            conflictList.Count.Should().Be(totalContenders - capacity, $"Remaining {totalContenders - capacity} requests should be rejected by SQL Server row lock capacity check.");
+
+            using (var verifyContext = _fixture.CreateNewDbContext(orgId))
+            {
+                var activeCountInDb = await verifyContext.Enrollments
+                    .IgnoreQueryFilters()
+                    .CountAsync(e => e.CourseGroupId == groupId && e.Status != EnrollmentConstants.Statuses.Cancelled);
+
+                activeCountInDb.Should().Be(capacity);
+                activeCountInDb.Should().BeLessThanOrEqualTo(capacity);
+            }
+        }
+        finally
+        {
+            EnrollmentService.EnableInProcessLock = true;
         }
     }
 

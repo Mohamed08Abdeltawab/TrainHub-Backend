@@ -18,6 +18,7 @@ namespace TrainHub.Application.Services;
 public class EnrollmentService : IEnrollmentService
 {
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> _groupLocks = new();
+    public static bool EnableInProcessLock { get; set; } = true;
     private readonly ITrainHubDbContext _dbContext;
     private readonly IEnrollmentValidator _enrollmentValidator;
     private readonly ICurrentOrganizationService _currentOrganizationService;
@@ -132,8 +133,11 @@ public class EnrollmentService : IEnrollmentService
 
         await _enrollmentValidator.ValidateCreateAsync(dto, organizationId.Value, cancellationToken);
 
-        var groupLock = _groupLocks.GetOrAdd(dto.CourseGroupId, _ => new SemaphoreSlim(1, 1));
-        await groupLock.WaitAsync(cancellationToken);
+        var groupLock = EnableInProcessLock ? _groupLocks.GetOrAdd(dto.CourseGroupId, _ => new SemaphoreSlim(1, 1)) : null;
+        if (groupLock != null)
+        {
+            await groupLock.WaitAsync(cancellationToken);
+        }
 
         var transaction = await BeginTransactionAsync(cancellationToken);
         await using (transaction)
@@ -226,7 +230,7 @@ public class EnrollmentService : IEnrollmentService
             }
             finally
             {
-                groupLock.Release();
+                groupLock?.Release();
             }
 
             _logger.LogInformation("Enrollment '{EnrollmentId}' created successfully.", enrollmentId);
@@ -277,8 +281,11 @@ public class EnrollmentService : IEnrollmentService
 
         if (isReactivating)
         {
-            var groupLock = _groupLocks.GetOrAdd(enrollment.CourseGroupId, _ => new SemaphoreSlim(1, 1));
-            await groupLock.WaitAsync(cancellationToken);
+            var groupLock = EnableInProcessLock ? _groupLocks.GetOrAdd(enrollment.CourseGroupId, _ => new SemaphoreSlim(1, 1)) : null;
+            if (groupLock != null)
+            {
+                await groupLock.WaitAsync(cancellationToken);
+            }
 
             var transaction = await BeginTransactionAsync(cancellationToken);
             await using (transaction)
@@ -329,7 +336,7 @@ public class EnrollmentService : IEnrollmentService
                 }
                 finally
                 {
-                    groupLock.Release();
+                    groupLock?.Release();
                 }
             }
         }
@@ -370,8 +377,11 @@ public class EnrollmentService : IEnrollmentService
 
         if (isReactivating)
         {
-            var groupLock = _groupLocks.GetOrAdd(enrollment.CourseGroupId, _ => new SemaphoreSlim(1, 1));
-            await groupLock.WaitAsync(cancellationToken);
+            var groupLock = EnableInProcessLock ? _groupLocks.GetOrAdd(enrollment.CourseGroupId, _ => new SemaphoreSlim(1, 1)) : null;
+            if (groupLock != null)
+            {
+                await groupLock.WaitAsync(cancellationToken);
+            }
 
             var transaction = await BeginTransactionAsync(cancellationToken);
             await using (transaction)
@@ -422,7 +432,7 @@ public class EnrollmentService : IEnrollmentService
                 }
                 finally
                 {
-                    groupLock.Release();
+                    groupLock?.Release();
                 }
             }
         }
