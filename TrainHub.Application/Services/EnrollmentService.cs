@@ -144,9 +144,7 @@ public class EnrollmentService : IEnrollmentService
             try
             {
                 // ── Re-verify active group capacity & uniqueness within synchronization scope ──
-                var courseGroup = await _dbContext.CourseGroups
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(cg => cg.Id == dto.CourseGroupId && cg.OrganizationId == organizationId.Value, cancellationToken);
+                var courseGroup = await _dbContext.GetCourseGroupWithLockAsync(dto.CourseGroupId, organizationId.Value, cancellationToken);
 
                 if (courseGroup == null)
                 {
@@ -273,8 +271,73 @@ public class EnrollmentService : IEnrollmentService
             throw new NotFoundException("Enrollment", id);
         }
 
-        enrollment.UpdateDetails(dto.PaidAmount, dto.Status);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        var isReactivating = enrollment.Status == EnrollmentConstants.Statuses.Cancelled &&
+                             dto.Status.HasValue &&
+                             dto.Status.Value != EnrollmentConstants.Statuses.Cancelled;
+
+        if (isReactivating)
+        {
+            var groupLock = _groupLocks.GetOrAdd(enrollment.CourseGroupId, _ => new SemaphoreSlim(1, 1));
+            await groupLock.WaitAsync(cancellationToken);
+
+            var transaction = await BeginTransactionAsync(cancellationToken);
+            await using (transaction)
+            {
+                var isCommitted = false;
+                try
+                {
+                    var courseGroup = await _dbContext.GetCourseGroupWithLockAsync(enrollment.CourseGroupId, organizationId.Value, cancellationToken);
+                    if (courseGroup == null)
+                    {
+                        throw new NotFoundException("CourseGroup", enrollment.CourseGroupId);
+                    }
+
+                    var activeEnrolledCount = await _dbContext.Enrollments
+                        .IgnoreQueryFilters()
+                        .CountAsync(e => e.CourseGroupId == enrollment.CourseGroupId && e.Status != EnrollmentConstants.Statuses.Cancelled && e.Id != enrollment.Id, cancellationToken);
+
+                    if (activeEnrolledCount >= courseGroup.Capacity)
+                    {
+                        _logger.LogWarning("Concurrent reactivation rejected: Course group '{CourseGroupId}' reached capacity ({Capacity}).",
+                            enrollment.CourseGroupId, courseGroup.Capacity);
+                        throw new ConflictException("Cannot reactivate enrollment because the course group has reached its maximum capacity.");
+                    }
+
+                    enrollment.UpdateDetails(dto.PaidAmount, dto.Status);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+
+                    if (transaction != null)
+                    {
+                        await transaction.CommitAsync(cancellationToken);
+                        isCommitted = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (transaction != null && !isCommitted)
+                    {
+                        try
+                        {
+                            await transaction.RollbackAsync(cancellationToken);
+                        }
+                        catch (Exception rollbackEx)
+                        {
+                            _logger.LogError(rollbackEx, "Failed to roll back transaction for enrollment update: {OriginalError}.", ex.Message);
+                        }
+                    }
+                    throw;
+                }
+                finally
+                {
+                    groupLock.Release();
+                }
+            }
+        }
+        else
+        {
+            enrollment.UpdateDetails(dto.PaidAmount, dto.Status);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
 
         _logger.LogInformation("Enrollment '{EnrollmentId}' updated successfully.", id);
 
@@ -302,8 +365,72 @@ public class EnrollmentService : IEnrollmentService
             throw new NotFoundException("Enrollment", id);
         }
 
-        enrollment.UpdateStatus(dto.Status);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        var isReactivating = enrollment.Status == EnrollmentConstants.Statuses.Cancelled &&
+                             dto.Status != EnrollmentConstants.Statuses.Cancelled;
+
+        if (isReactivating)
+        {
+            var groupLock = _groupLocks.GetOrAdd(enrollment.CourseGroupId, _ => new SemaphoreSlim(1, 1));
+            await groupLock.WaitAsync(cancellationToken);
+
+            var transaction = await BeginTransactionAsync(cancellationToken);
+            await using (transaction)
+            {
+                var isCommitted = false;
+                try
+                {
+                    var courseGroup = await _dbContext.GetCourseGroupWithLockAsync(enrollment.CourseGroupId, enrollment.OrganizationId, cancellationToken);
+                    if (courseGroup == null)
+                    {
+                        throw new NotFoundException("CourseGroup", enrollment.CourseGroupId);
+                    }
+
+                    var activeEnrolledCount = await _dbContext.Enrollments
+                        .IgnoreQueryFilters()
+                        .CountAsync(e => e.CourseGroupId == enrollment.CourseGroupId && e.Status != EnrollmentConstants.Statuses.Cancelled && e.Id != enrollment.Id, cancellationToken);
+
+                    if (activeEnrolledCount >= courseGroup.Capacity)
+                    {
+                        _logger.LogWarning("Concurrent reactivation rejected: Course group '{CourseGroupId}' reached capacity ({Capacity}).",
+                            enrollment.CourseGroupId, courseGroup.Capacity);
+                        throw new ConflictException("Cannot activate enrollment because the course group has reached its maximum capacity.");
+                    }
+
+                    enrollment.UpdateStatus(dto.Status);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+
+                    if (transaction != null)
+                    {
+                        await transaction.CommitAsync(cancellationToken);
+                        isCommitted = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (transaction != null && !isCommitted)
+                    {
+                        try
+                        {
+                            await transaction.RollbackAsync(cancellationToken);
+                        }
+                        catch (Exception rollbackEx)
+                        {
+                            _logger.LogError(rollbackEx, "Failed to roll back transaction for enrollment status update: {OriginalError}.", ex.Message);
+                        }
+                    }
+                    throw;
+                }
+                finally
+                {
+                    groupLock.Release();
+                }
+            }
+        }
+        else
+        {
+            enrollment.UpdateStatus(dto.Status);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
 
         _logger.LogInformation("Status of enrollment '{EnrollmentId}' updated to '{Status}'.", id, dto.Status);
 

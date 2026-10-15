@@ -22,5 +22,7 @@ public interface ITrainHubDbContext
 
     DatabaseFacade Database { get; }
 
+    Task<CourseGroup?> GetCourseGroupWithLockAsync(Guid courseGroupId, Guid organizationId, CancellationToken cancellationToken = default);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

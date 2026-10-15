@@ -54,6 +54,14 @@ public static class DependencyInjection
         .AddRoles<IdentityRole<Guid>>()
         .AddEntityFrameworkStores<TrainHubDbContext>();
 
+        // ── Tenant-Scoped Identity Validator ────────────────────────
+        var defaultUserValidator = services.FirstOrDefault(d => d.ServiceType == typeof(IUserValidator<ApplicationUser>));
+        if (defaultUserValidator != null)
+        {
+            services.Remove(defaultUserValidator);
+        }
+        services.AddScoped<IUserValidator<ApplicationUser>, OrganizationUserValidator>();
+
         // ── Role & Demo Data Seeding ─────────────────────────────────
         services.AddScoped<IRoleSeeder, RoleSeeder>();
         services.AddScoped<IDemoDataSeeder, DemoDataSeeder>();

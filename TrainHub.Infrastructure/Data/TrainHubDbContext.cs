@@ -43,6 +43,25 @@ public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, Iden
 
     public virtual DbSet<Student> Students { get; set; }
 
+    /// <summary>
+    /// Acquires a transaction-scoped row lock on the specified CourseGroup using UPDLOCK and HOLDLOCK
+    /// hints when running against SQL Server, or standard LINQ query when running against non-relational test providers.
+    /// </summary>
+    public virtual async Task<CourseGroup?> GetCourseGroupWithLockAsync(Guid courseGroupId, Guid organizationId, CancellationToken cancellationToken = default)
+    {
+        if (this.Database.IsSqlServer())
+        {
+            return await CourseGroups
+                .FromSqlInterpolated($"SELECT * FROM dbo.CourseGroups WITH (UPDLOCK, HOLDLOCK) WHERE Id = {courseGroupId} AND OrganizationId = {organizationId}")
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        return await CourseGroups
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(cg => cg.Id == courseGroupId && cg.OrganizationId == organizationId, cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -56,6 +75,13 @@ public partial class TrainHubDbContext : IdentityDbContext<ApplicationUser, Iden
             entity.HasIndex(e => new { e.OrganizationId, e.NormalizedEmail }, "IX_ApplicationUsers_Org_NormalizedEmail").IsUnique();
 
             entity.HasIndex(e => new { e.OrganizationId, e.NormalizedUserName }, "IX_ApplicationUsers_Org_NormalizedUserName").IsUnique();
+
+            // IdentityDbContext adds a global unique index on NormalizedUserName named "UserNameIndex".
+            // In TrainHub SaaS, username/email uniqueness is scoped to OrganizationId via IX_ApplicationUsers_Org_NormalizedUserName.
+            // UserNameIndex is retained as a non-unique index to preserve fast lookups without blocking multi-tenant accounts.
+            entity.HasIndex(e => e.NormalizedUserName)
+                .HasDatabaseName("UserNameIndex")
+                .IsUnique(false);
 
             entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())", "DF_ApplicationUsers_CreatedAt");
