@@ -15,7 +15,8 @@ builder.Services
     .AddInfrastructure(builder.Configuration);
 
 // ── Health Checks ───────────────────────────────────────────────
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddCheck<TrainHub.Api.Health.DatabaseHealthCheck>("database", tags: new[] { "ready" });
 
 // ── Authorization Policies ──────────────────────────────────────
 builder.Services.AddAuthorization(options =>
@@ -190,8 +191,18 @@ app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHealthChecks("/health");
-app.MapHealthChecks("/api/health");
+app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => false
+});
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
+app.MapHealthChecks("/api/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
 
 app.MapControllers();
 

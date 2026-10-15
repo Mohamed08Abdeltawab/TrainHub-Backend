@@ -249,14 +249,9 @@ public class RoleServiceTests : IDisposable
             LastName = "Admin",
             IsActive = true
         };
-        _dbContext.ApplicationUsers.Add(superAdmin);
-        _dbContext.SaveChanges();
 
-        _userManagerMock.Setup(m => m.GetRolesAsync(It.Is<ApplicationUser>(u => u.Id == superAdmin.Id)))
-            .ReturnsAsync(new List<string> { AppRoles.SuperAdmin });
-
-        _userManagerMock.Setup(m => m.GetRolesAsync(It.Is<ApplicationUser>(u => u.Id == _userId)))
-            .ReturnsAsync(new List<string> { AppRoles.OrgAdmin });
+        _userManagerMock.Setup(m => m.GetUsersInRoleAsync(AppRoles.SuperAdmin))
+            .ReturnsAsync(new List<ApplicationUser> { superAdmin });
 
         // Act
         var result = await _service.GetPlatformUsersAsync();
@@ -264,6 +259,6 @@ public class RoleServiceTests : IDisposable
         // Assert
         result.Should().NotBeNull();
         result.Should().ContainSingle(u => u.Email == "admin@platform.io" && u.Role == "Platform Super Admin");
-        result.Should().NotContain(u => u.Email == "test@example.com");
+        _userManagerMock.Verify(m => m.GetUsersInRoleAsync(AppRoles.SuperAdmin), Times.Once);
     }
 }

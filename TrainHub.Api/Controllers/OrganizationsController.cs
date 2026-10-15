@@ -169,6 +169,19 @@ public class OrganizationsController : ControllerBase
                 _logger.LogWarning("Forbidden access: User belonging to org '{CallerOrgId}' attempted to update org '{TargetOrgId}'.", callerOrgId, id);
                 return Forbid();
             }
+
+            // An OrgAdmin cannot modify privileged organization settings (Slug or IsActive)
+            var currentOrg = await _organizationService.GetByIdAsync(id, cancellationToken);
+            if (!string.Equals(dto.Slug, currentOrg.Slug, StringComparison.OrdinalIgnoreCase) || dto.IsActive != currentOrg.IsActive)
+            {
+                _logger.LogWarning("Forbidden operation: OrgAdmin attempted to modify privileged settings (Slug or IsActive) on org '{OrgId}'.", id);
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Privileged Setting Modification Forbidden",
+                    Detail = "Organization administrators cannot modify the organization slug or active status.",
+                    Status = StatusCodes.Status400BadRequest
+                });
+            }
         }
 
         var result = await _organizationService.UpdateAsync(id, dto, cancellationToken);
